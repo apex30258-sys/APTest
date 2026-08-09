@@ -1,4 +1,3 @@
-```powershell
 # ============================================================
 # RDP Wrapper v1.6.2 - Automated Installation
 # Run PowerShell as Administrator
@@ -156,42 +155,80 @@ else {
 
 
 # 10. Restart Remote Desktop Service
+
 Write-Host ""
-Write-Host "[+] Restarting Remote Desktop Service..." -ForegroundColor Cyan
+Write-Host "[+] Configuring Remote Desktop Service..." -ForegroundColor Cyan
 
 try {
-    Start-Service -Name "TermService" -ErrorAction Stop
-    Write-Host "[+] TermService started successfully." -ForegroundColor Green
+# Make sure the service is not disabled
+Set-Service -Name "TermService" -StartupType Automatic -ErrorAction Stop
+
+```
+Write-Host "[+] TermService startup type set to Automatic." -ForegroundColor Green
+```
+
 }
 catch {
-    Write-Host "[!] Could not start TermService automatically." -ForegroundColor Yellow
+Write-Host "[!] Could not set TermService startup type." -ForegroundColor Yellow
+Write-Host $_.Exception.Message -ForegroundColor Yellow
 }
 
+try {
+# Check current service state
+$service = Get-Service -Name "TermService" -ErrorAction Stop
+
+```
+if ($service.Status -ne "Running") {
+    Write-Host "[+] Starting TermService..." -ForegroundColor Cyan
+
+    Start-Service -Name "TermService" -ErrorAction Stop
+
+    # Give Windows a moment to start the service
+    Start-Sleep -Seconds 3
+
+    $service = Get-Service -Name "TermService"
+
+    if ($service.Status -eq "Running") {
+        Write-Host "[+] TermService started successfully." -ForegroundColor Green
+    }
+    else {
+        Write-Host "[!] TermService did not reach the Running state." -ForegroundColor Yellow
+        Write-Host "[!] Current status: $($service.Status)" -ForegroundColor Yellow
+    }
+}
+else {
+    Write-Host "[+] TermService is already running." -ForegroundColor Green
+}
+```
+
+}
+catch {
+Write-Host "[!] Could not start TermService." -ForegroundColor Red
+Write-Host $_.Exception.Message -ForegroundColor Red
+}
 
 # 11. Cleanup
+
 Write-Host "[+] Cleaning temporary files..." -ForegroundColor Cyan
 
 Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 
-
 # 12. Finished
+
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
+Write-Host "                 INSTALLATION COMPLETE"
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 
 if (Test-Path $rdpConf) {
-    Write-Host "[+] RDPConf.exe:" -ForegroundColor Green
-    Write-Host "    $rdpConf" -ForegroundColor White
-    Write-Host ""
-    Write-Host "[+] Launching RDPConf.exe..." -ForegroundColor Cyan
-
-    Start-Process $rdpConf
+Write-Host "[+] RDPConf.exe installed successfully." -ForegroundColor Green
+Write-Host "    $rdpConf" -ForegroundColor White
+Write-Host ""
+Write-Host "[+] RDPConf.exe was NOT launched automatically." -ForegroundColor Cyan
 }
 else {
-    Write-Host "[!] RDPConf.exe could not be located." -ForegroundColor Yellow
+Write-Host "[!] RDPConf.exe could not be located." -ForegroundColor Yellow
 }
 
 Start-Sleep -Seconds 3
-```
