@@ -101,16 +101,17 @@ Write-Host "[+] Found installer:" -ForegroundColor Green
 Write-Host "    $($installBat.FullName)" -ForegroundColor Gray
 
 
-# 7. Run install.bat
+# 7. Run install.bat as Administrator
 Write-Host ""
-Write-Host "[+] Running RDP Wrapper install.bat..." -ForegroundColor Cyan
-Write-Host "[!] Please wait for the installer to finish..." -ForegroundColor Yellow
+Write-Host "[+] Running install.bat as Administrator..." -ForegroundColor Cyan
+Write-Host "[!] Please approve the UAC prompt if it appears." -ForegroundColor Yellow
 
 try {
     $process = Start-Process `
         -FilePath "cmd.exe" `
         -ArgumentList "/c `"$($installBat.FullName)`"" `
         -WorkingDirectory $installBat.DirectoryName `
+        -Verb RunAs `
         -Wait `
         -PassThru
 
@@ -121,9 +122,8 @@ try {
 catch {
     Write-Host "[!] Failed to run install.bat." -ForegroundColor Yellow
     Write-Host $_.Exception.Message -ForegroundColor Yellow
-    Write-Host "[+] Continuing with the rest of the script..." -ForegroundColor Cyan
+    Write-Host "[+] Continuing anyway..." -ForegroundColor Cyan
 }
-
 
 # 8. Apply updated rdpwrap.ini
 Write-Host ""
