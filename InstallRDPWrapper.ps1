@@ -1,59 +1,197 @@
-# Ensure the script runs with Administrator privileges
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "[-] Error: Please run this script as an Administrator!" -ForegroundColor Red
+```powershell
+# ============================================================
+# RDP Wrapper v1.6.2 - Automated Installation
+# Run PowerShell as Administrator
+# ============================================================
+
+# 1. Check Administrator privileges
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)) {
+    Write-Host "[-] Please run PowerShell as Administrator!" -ForegroundColor Red
     Start-Sleep -Seconds 3
     exit
 }
 
+# Paths
 $installPath = "C:\Program Files\RDP Wrapper"
-$zipUrl = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
-$tempZip = "$env:TEMP\rdpwrap_v1.6.2.zip"
-$extractDir = "$env:TEMP\rdpwrap_extracted"
+$tempDir = "$env:TEMP\rdpwrap_install"
+$tempZip = "$tempDir\RDPWrap-v1.6.2.zip"
+$extractDir = "$tempDir\extracted"
 
-# REPLACE THIS URL WITH YOUR OWN CUSTOM RAW INI LINK
+# Download URLs
+$zipUrl = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
 $customIniUrl = "https://raw.githubusercontent.com/affinityv/INI-RDPWRAP/refs/heads/master/rdpwrap.ini"
 
-Write-Host "[+] Stopping Remote Desktop Service (TermService)..." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "        RDP Wrapper v1.6.2 Automated Installer" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host ""
+
+# 2. Prepare temporary directory
+Write-Host "[+] Preparing temporary directory..." -ForegroundColor Cyan
+
+if (Test-Path $tempDir) {
+    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+
+
+# 3. Stop Remote Desktop Service
+Write-Host "[+] Stopping Remote Desktop Service..." -ForegroundColor Cyan
+
 Stop-Service -Name "TermService" -Force -ErrorAction SilentlyContinue
 
-# 1. Download and Extract RDP Wrapper v1.6.2
-Write-Host "[+] Downloading RDP Wrapper v1.6.2 from official repository..." -ForegroundColor Cyan
+
+# 4. Download RDP Wrapper
+Write-Host "[+] Downloading RDP Wrapper v1.6.2..." -ForegroundColor Cyan
+
 try {
-    Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing
+    Invoke-WebRequest `
+        -Uri $zipUrl `
+        -OutFile $tempZip `
+        -UseBasicParsing `
+        -ErrorAction Stop
+
+    Write-Host "[+] Download completed." -ForegroundColor Green
 }
 catch {
-    Write-Host "[-] Failed to download RDP Wrapper v1.6.2 zip package." -ForegroundColor Red
+    Write-Host "[-] Download failed!" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
     exit
 }
 
-Write-Host "[+] Extracting package files..." -ForegroundColor Cyan
-if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
-Expand-Archive -Path $tempZip -DestinationPath $extractDir -Force
 
-# 2. Run the base installation files
-Write-Host "[+] Installing RDP Wrapper binaries..." -ForegroundColor Cyan
-if (-not (Test-Path $installPath)) {
-    New-Item -ItemType Directory -Path $installPath -Force | Out-Null
-}
-Copy-Item "$extractDir\*" $installPath -Recurse -Force
+# 5. Extract ZIP
+Write-Host "[+] Extracting RDP Wrapper..." -ForegroundColor Cyan
 
-# 3. Download and overwrite with your custom/updated rdpwrap.ini
-Write-Host "[+] Downloading your custom rdpwrap.ini from GitHub..." -ForegroundColor Cyan
 try {
-    Invoke-WebRequest -Uri $customIniUrl -OutFile "$installPath\rdpwrap.ini" -UseBasicParsing
-    Write-Host "[+] Successfully applied custom rdpwrap.ini!" -ForegroundColor Green
+    Expand-Archive `
+        -Path $tempZip `
+        -DestinationPath $extractDir `
+        -Force `
+        -ErrorAction Stop
+
+    Write-Host "[+] Extraction completed." -ForegroundColor Green
 }
 catch {
-    Write-Host "[-] Failed to download custom INI file. Falling back to default package INI." -ForegroundColor Yellow
+    Write-Host "[-] Failed to extract ZIP!" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit
 }
 
-# 4. Restart the Remote Desktop Service
-Write-Host "[+] Restarting Remote Desktop Service (TermService)..." -ForegroundColor Cyan
-Start-Service -Name "TermService" -ErrorAction SilentlyContinue
 
-# Cleanup temp files
-Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+# 6. Find install.bat
+$installBat = Get-ChildItem `
+    -Path $extractDir `
+    -Filter "install.bat" `
+    -Recurse `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
 
-Write-Host "[*] Complete! You can now launch C:\Program Files\RDP Wrapper\RDPConf.exe to check status." -ForegroundColor Green
+if (-not $installBat) {
+    Write-Host "[-] install.bat was not found in the downloaded package!" -ForegroundColor Red
+    exit
+}
+
+Write-Host "[+] Found installer:" -ForegroundColor Green
+Write-Host "    $($installBat.FullName)" -ForegroundColor Gray
+
+
+# 7. Run install.bat
+Write-Host ""
+Write-Host "[+] Running RDP Wrapper install.bat..." -ForegroundColor Cyan
+Write-Host "[!] Please wait for the installer to finish..." -ForegroundColor Yellow
+
+try {
+    $process = Start-Process `
+        -FilePath "cmd.exe" `
+        -ArgumentList "/c `"$($installBat.FullName)`"" `
+        -WorkingDirectory $installBat.DirectoryName `
+        -Wait `
+        -PassThru
+
+    Write-Host "[+] install.bat finished." -ForegroundColor Green
+    Write-Host "[+] Exit code: $($process.ExitCode)" -ForegroundColor Gray
+    Write-Host "[+] Continuing with the rest of the script..." -ForegroundColor Cyan
+}
+catch {
+    Write-Host "[!] Failed to run install.bat." -ForegroundColor Yellow
+    Write-Host $_.Exception.Message -ForegroundColor Yellow
+    Write-Host "[+] Continuing with the rest of the script..." -ForegroundColor Cyan
+}
+
+
+# 8. Apply updated rdpwrap.ini
+Write-Host ""
+Write-Host "[+] Downloading updated rdpwrap.ini..." -ForegroundColor Cyan
+
+try {
+    Invoke-WebRequest `
+        -Uri $customIniUrl `
+        -OutFile "$installPath\rdpwrap.ini" `
+        -UseBasicParsing `
+        -ErrorAction Stop
+
+    Write-Host "[+] Updated rdpwrap.ini applied." -ForegroundColor Green
+}
+catch {
+    Write-Host "[-] Failed to download updated INI." -ForegroundColor Yellow
+    Write-Host "[!] Existing INI file will be left unchanged." -ForegroundColor Yellow
+}
+
+
+# 9. Check for RDPConf.exe
+$rdpConf = "$installPath\RDPConf.exe"
+
+if (Test-Path $rdpConf) {
+    Write-Host "[+] RDPConf.exe found." -ForegroundColor Green
+}
+else {
+    Write-Host "[!] RDPConf.exe was not found at the expected location." -ForegroundColor Yellow
+}
+
+
+# 10. Restart Remote Desktop Service
+Write-Host ""
+Write-Host "[+] Restarting Remote Desktop Service..." -ForegroundColor Cyan
+
+try {
+    Start-Service -Name "TermService" -ErrorAction Stop
+    Write-Host "[+] TermService started successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "[!] Could not start TermService automatically." -ForegroundColor Yellow
+}
+
+
+# 11. Cleanup
+Write-Host "[+] Cleaning temporary files..." -ForegroundColor Cyan
+
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+
+
+# 12. Finished
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host ""
+
+if (Test-Path $rdpConf) {
+    Write-Host "[+] RDPConf.exe:" -ForegroundColor Green
+    Write-Host "    $rdpConf" -ForegroundColor White
+    Write-Host ""
+    Write-Host "[+] Launching RDPConf.exe..." -ForegroundColor Cyan
+
+    Start-Process $rdpConf
+}
+else {
+    Write-Host "[!] RDPConf.exe could not be located." -ForegroundColor Yellow
+}
+
 Start-Sleep -Seconds 3
+```
