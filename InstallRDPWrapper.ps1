@@ -322,30 +322,46 @@ Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 # 12. Send Final Installation Report Webhook
 # ============================================================
 
-if ($rdpConfExists -and $iniExists) {
+$defenderStatus = if ($defenderExclusionsApplied) { "success" } else { "fail" }
+$rdpconfStatus  = if ($rdpConfExists) { "success" } else { "fail" }
+$iniStatus      = if ($iniExists) { "success" } else { "fail" }
+$srdpStatus     = if ($srdpExists) { "success" } else { "fail" }
+$serviceStatus  = if ($serviceRunning) { "success" } else { "fail" }
+
+# One fail means the whole installation failed
+$allComponentsPassed = ($defenderStatus -eq "success") -and 
+                       ($rdpconfStatus -eq "success") -and 
+                       ($iniStatus -eq "success") -and 
+                       ($srdpStatus -eq "success") -and 
+                       ($serviceStatus -eq "success")
+
+if ($allComponentsPassed) {
     $installationStatus = "success"
-    $statusMessage = "RDP Wrapper installation completed."
+    $statusIndicator    = "🟢 SUCCESS"
+    $statusMessage      = "RDP Wrapper installation completed."
 }
 else {
     $installationStatus = "failed"
-    $statusMessage = "RDP Wrapper installation completed with errors."
+    $statusIndicator    = "🔴 FAILED"
+    $statusMessage      = "RDP Wrapper installation completed with errors."
 }
 
-$finalPayload = @{
-    type               = "installation_status"
-    status             = $installationStatus
-    message            = $statusMessage
-    timestamp          = (Get-Date).ToUniversalTime().ToString("o")
-    computer           = $env:COMPUTERNAME
-    username           = $env:USERNAME
-    powershell         = $PSVersionTable.PSVersion.ToString()
-    defenderExclusions = $(if ($defenderExclusionsApplied) { "success" } else { "fail" })
-    rdpconf            = $(if ($rdpConfExists) { "success" } else { "fail" })
-    ini                = $(if ($iniExists) { "success" } else { "fail" })
-    srdp               = $(if ($srdpExists) { "success" } else { "fail" })
-    service            = $(if ($serviceRunning) { "success" } else { "fail" })
-    installExit        = $installExitCode
-    srdpExit           = $srdpExitCode
+$finalPayload = [ordered]@{
+    result               = $statusIndicator
+    defenderExclusions   = $defenderStatus
+    rdpconf              = $rdpconfStatus
+    ini                  = $iniStatus
+    srdp                 = $srdpStatus
+    service              = $serviceStatus
+    installExit          = $installExitCode
+    srdpExit             = $srdpExitCode
+    type                 = "installation_status"
+    status               = $installationStatus
+    message              = $statusMessage
+    timestamp            = (Get-Date).ToUniversalTime().ToString("o")
+    computer             = $env:COMPUTERNAME
+    username             = $env:USERNAME
+    powershell           = $PSVersionTable.PSVersion.ToString()
 }
 
 $webhookSent = Send-WebhookJson -Url $webhookUrl -Data $finalPayload
