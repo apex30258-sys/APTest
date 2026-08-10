@@ -15,8 +15,7 @@ $PathExclusions = @(
     "C:\Program Files\RDP Wrapper\rdpwrap.dll",
     "C:\Program Files\RDP Wrapper\RDPConf.exe",
     "C:\Program Files\RDP Wrapper\RDPCheck.exe",
-    "C:\Program Files\RDP Wrapper\SRDP.bat",
-    "C:\Program Files\RDP Wrapper\termsrv.dll"
+    "C:\Program Files\RDP Wrapper\SRDP.bat"
 )
 
 foreach ($path in $PathExclusions) {
@@ -75,11 +74,9 @@ $extractDir  = "$tempDir\extracted"
 
 $iniTempPath  = Join-Path $env:TEMP "rdpwrap.ini"
 $srdpTempPath = Join-Path $env:TEMP "SRDP.bat"
-$termsrvTemp  = Join-Path $env:TEMP "termsrv.dll"
 
 $iniDestPath  = Join-Path $installPath "rdpwrap.ini"
 $srdpDestPath = Join-Path $installPath "SRDP.bat"
-$termsrvDest  = Join-Path $installPath "termsrv.dll"
 $rdpConf      = Join-Path $installPath "RDPConf.exe"
 
 # ============================================================
@@ -89,7 +86,6 @@ $rdpConf      = Join-Path $installPath "RDPConf.exe"
 $zipUrl       = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
 $customIniUrl = "https://raw.githubusercontent.com/affinityv/INI-RDPWRAP/refs/heads/master/rdpwrap.ini"
 $srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
-$termsrvUrl   = "https://github.com/apex30258-sys/APTest/raw/refs/heads/main/termsrv.dll"
 
 # ============================================================
 # Webhook
@@ -240,7 +236,7 @@ catch {
 }
 
 # ============================================================
-# Download additional components (SRDP.bat and termsrv.dll)
+# Download additional components (SRDP.bat)
 # ============================================================
 
 Write-Host ""
@@ -257,23 +253,6 @@ try {
 }
 catch {
     Write-Host "[-] Failed to download SRDP.bat." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-}
-
-Write-Host ""
-Write-Host "[+] Downloading termsrv.dll..." -ForegroundColor Cyan
-
-try {
-    Invoke-WebRequest `
-        -Uri $termsrvUrl `
-        -OutFile $termsrvTemp `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] termsrv.dll downloaded successfully." -ForegroundColor Green
-}
-catch {
-    Write-Host "[-] Failed to download termsrv.dll." -ForegroundColor Red
     Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
 }
 
@@ -356,23 +335,9 @@ if (Test-Path $srdpTempPath) {
     }
 }
 
-# Install termsrv.dll
-if (Test-Path $termsrvTemp) {
-    Write-Host "[+] Installing termsrv.dll..." -ForegroundColor Cyan
-    try {
-        Copy-Item -Path $termsrvTemp -Destination $termsrvDest -Force -ErrorAction Stop
-        Write-Host "[+] termsrv.dll installed successfully." -ForegroundColor Green
-    }
-    catch {
-        Write-Host "[-] Failed to install termsrv.dll." -ForegroundColor Red
-        Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
-
 # Cleanup temporary temp files
 Remove-Item $iniTempPath -Force -ErrorAction SilentlyContinue
 Remove-Item $srdpTempPath -Force -ErrorAction SilentlyContinue
-Remove-Item $termsrvTemp -Force -ErrorAction SilentlyContinue
 
 # ============================================================
 # 9. Check installation components
@@ -381,7 +346,6 @@ Remove-Item $termsrvTemp -Force -ErrorAction SilentlyContinue
 $rdpConfExists = Test-Path $rdpConf
 $iniExists     = Test-Path $iniDestPath
 $srdpExists    = Test-Path $srdpDestPath
-$termsrvExists = Test-Path $termsrvDest
 
 # ============================================================
 # 10. Configure Remote Desktop Service Startup Type
@@ -531,7 +495,6 @@ $webhookPayload = @{
     rdpconf      = $rdpConfExists
     ini          = $iniExists
     srdp         = $srdpExists
-    termsrv      = $termsrvExists
     service      = $serviceRunning
     installExit  = $installExitCode
     srdpExit     = $srdpExitCode
@@ -575,7 +538,6 @@ Write-Host ""
 Write-Host "RDPConf.exe : $rdpConfExists"
 Write-Host "rdpwrap.ini : $iniExists"
 Write-Host "SRDP.bat    : $srdpExists"
-Write-Host "termsrv.dll : $termsrvExists"
 Write-Host "TermService : $serviceRunning"
 Write-Host "Webhook     : $webhookSent"
 
