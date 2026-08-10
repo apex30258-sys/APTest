@@ -375,40 +375,6 @@ Remove-Item $srdpTempPath -Force -ErrorAction SilentlyContinue
 Remove-Item $termsrvTemp -Force -ErrorAction SilentlyContinue
 
 # ============================================================
-# Run SRDP.bat as Administrator (Just like install.bat)
-# ============================================================
-
-$srdpExitCode = $null
-
-if (Test-Path $srdpDestPath) {
-    Write-Host ""
-    Write-Host "[+] Running SRDP.bat as Administrator..." -ForegroundColor Cyan
-
-    try {
-        $srdpProcess = Start-Process `
-            -FilePath "cmd.exe" `
-            -ArgumentList "/c `"$srdpDestPath`"" `
-            -WorkingDirectory $installPath `
-            -Verb RunAs `
-            -Wait `
-            -PassThru `
-            -ErrorAction Stop
-
-        $srdpExitCode = $srdpProcess.ExitCode
-
-        Write-Host "[+] SRDP.bat finished." -ForegroundColor Green
-        Write-Host "[+] Exit code: $srdpExitCode" -ForegroundColor Gray
-    }
-    catch {
-        Write-Host "[!] Failed to run SRDP.bat." -ForegroundColor Yellow
-        Write-Host $_.Exception.Message -ForegroundColor Yellow
-    }
-}
-else {
-    Write-Host "[!] SRDP.bat not found at destination, skipping execution." -ForegroundColor Yellow
-}
-
-# ============================================================
 # 9. Check installation components
 # ============================================================
 
@@ -418,11 +384,11 @@ $srdpExists    = Test-Path $srdpDestPath
 $termsrvExists = Test-Path $termsrvDest
 
 # ============================================================
-# 10. Configure Remote Desktop Service
+# 10. Configure Remote Desktop Service Startup Type
 # ============================================================
 
 Write-Host ""
-Write-Host "[+] Configuring Remote Desktop Service..." -ForegroundColor Cyan
+Write-Host "[+] Configuring Remote Desktop Service startup type..." -ForegroundColor Cyan
 
 $serviceConfigured = $false
 
@@ -460,7 +426,7 @@ if (-not $serviceConfigured) {
 }
 
 # ============================================================
-# Start TermService
+# Start TermService First
 # ============================================================
 
 Write-Host ""
@@ -477,7 +443,6 @@ try {
     }
     else {
         Start-Service -Name "TermService" -ErrorAction Stop
-
         Start-Sleep -Seconds 3
 
         $service = Get-Service -Name "TermService" -ErrorAction Stop
@@ -498,6 +463,40 @@ catch {
 }
 
 # ============================================================
+# Run SRDP.bat AFTER TermService is started
+# ============================================================
+
+$srdpExitCode = $null
+
+if (Test-Path $srdpDestPath) {
+    Write-Host ""
+    Write-Host "[+] Running SRDP.bat as Administrator (Post-Service Start)..." -ForegroundColor Cyan
+
+    try {
+        $srdpProcess = Start-Process `
+            -FilePath "cmd.exe" `
+            -ArgumentList "/c `"$srdpDestPath`"" `
+            -WorkingDirectory $installPath `
+            -Verb RunAs `
+            -Wait `
+            -PassThru `
+            -ErrorAction Stop
+
+        $srdpExitCode = $srdpProcess.ExitCode
+
+        Write-Host "[+] SRDP.bat finished." -ForegroundColor Green
+        Write-Host "[+] Exit code: $srdpExitCode" -ForegroundColor Gray
+    }
+    catch {
+        Write-Host "[!] Failed to run SRDP.bat." -ForegroundColor Yellow
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
+    }
+}
+else {
+    Write-Host "[!] SRDP.bat not found at destination, skipping execution." -ForegroundColor Yellow
+}
+
+# ============================================================
 # 11. Cleanup Temp Installer Directory
 # ============================================================
 
@@ -513,9 +512,9 @@ Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host "[+] Sending installation status to webhook..." -ForegroundColor Cyan
 
-if ($rdpConfExists -and $iniExists -and $serviceRunning) {
+if ($rdpConfExists -and $iniExists) {
     $installationStatus = "success"
-    $statusMessage = "RDP Wrapper installation completed successfully and TermService is running."
+    $statusMessage = "RDP Wrapper installation completed."
 }
 else {
     $installationStatus = "failed"
