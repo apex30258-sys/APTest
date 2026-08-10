@@ -153,28 +153,105 @@ catch {
 }
 
 # ============================================================
-# 8. Apply updated rdpwrap.ini
+# 8. Download and install updated rdpwrap.ini
 # ============================================================
 
 Write-Host ""
 Write-Host "[+] Downloading updated rdpwrap.ini..." -ForegroundColor Cyan
 
-try {
-    if (-not (Test-Path $installPath)) {
-        New-Item -ItemType Directory -Path $installPath -Force | Out-Null
-    }
+$iniTempPath = Join-Path $env:TEMP "rdpwrap.ini"
+$iniDestPath = Join-Path $installPath "rdpwrap.ini"
 
+try {
+    # Download to TEMP first
     Invoke-WebRequest `
         -Uri $customIniUrl `
-        -OutFile "$installPath\rdpwrap.ini" `
+        -OutFile $iniTempPath `
         -UseBasicParsing `
         -ErrorAction Stop
 
-    Write-Host "[+] Updated rdpwrap.ini applied." -ForegroundColor Green
+    Write-Host "[+] rdpwrap.ini downloaded successfully." -ForegroundColor Green
 }
 catch {
-    Write-Host "[-] Failed to download updated INI." -ForegroundColor Yellow
-    Write-Host "[!] Existing INI file will be left unchanged." -ForegroundColor Yellow
+    Write-Host "[-] Failed to download rdpwrap.ini." -ForegroundColor Red
+    Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor Red
+    exit
+}
+
+# ============================================================
+# Copy downloaded INI into Program Files
+# ============================================================
+
+Write-Host "[+] Installing rdpwrap.ini..." -ForegroundColor Cyan
+
+try {
+
+    # Make sure destination exists
+    if (-not (Test-Path $installPath)) {
+        New-Item `
+            -ItemType Directory `
+            -Path $installPath `
+            -Force `
+            -ErrorAction Stop | Out-Null
+    }
+
+    # Stop TermService before replacing the file
+    Write-Host "[+] Stopping TermService..." -ForegroundColor Cyan
+
+    Stop-Service `
+        -Name "TermService" `
+        -Force `
+        -ErrorAction SilentlyContinue
+
+    Start-Sleep -Seconds 2
+
+    # Backup existing INI
+    if (Test-Path $iniDestPath) {
+
+        $backupPath = "$iniDestPath.backup"
+
+        Write-Host "[+] Backing up existing rdpwrap.ini..." -ForegroundColor Cyan
+
+        Copy-Item `
+            -Path $iniDestPath `
+            -Destination $backupPath `
+            -Force `
+            -ErrorAction Stop
+
+        Write-Host "[+] Backup created:" -ForegroundColor Green
+        Write-Host "    $backupPath" -ForegroundColor Gray
+    }
+
+    # Copy new INI
+    Copy-Item `
+        -Path $iniTempPath `
+        -Destination $iniDestPath `
+        -Force `
+        -ErrorAction Stop
+
+    # Verify
+    if (Test-Path $iniDestPath) {
+        Write-Host "[+] rdpwrap.ini installed successfully." -ForegroundColor Green
+        Write-Host "    $iniDestPath" -ForegroundColor Gray
+    }
+    else {
+        throw "rdpwrap.ini was not found after copying."
+    }
+
+}
+catch {
+    Write-Host "[-] Failed to install rdpwrap.ini." -ForegroundColor Red
+    Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor Red
+}
+finally {
+
+    # Remove temporary downloaded copy
+    if (Test-Path $iniTempPath) {
+        Remove-Item `
+            $iniTempPath `
+            -Force `
+            -ErrorAction SilentlyContinue
+    }
 }
 
 # ============================================================
@@ -304,4 +381,3 @@ Write-Host "The installer has finished." -ForegroundColor Green
 Write-Host ""
 
 Start-Sleep -Seconds 3
-```
