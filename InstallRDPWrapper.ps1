@@ -24,7 +24,7 @@ exit 1
 
 # ============================================================
 
-# Windows Defender Exclusions
+# 2. Windows Defender Exclusions (Pre-empting Blocks)
 
 # ============================================================
 
@@ -40,18 +40,18 @@ $PathExclusions = @(
     "C:\Program Files\RDP Wrapper\termsrv.dll"
 )
 
-foreach ($path in$PathExclusions) {
+$PathExclusions.ForEach({
     try {
         $existing = Get-MpPreference | Select-Object -ExpandProperty ExclusionPath -ErrorAction SilentlyContinue
-        if ($existing -notcontains$path) {
-            Add-MpPreference -ExclusionPath $path -ErrorAction Stop
-            Write-Host "    [+] Added path exclusion: $path" -ForegroundColor Green
+        if ($existing -notcontains $_) {
+            Add-MpPreference -ExclusionPath $_ -ErrorAction Stop
+            Write-Host "    [+] Added path exclusion: $_" -ForegroundColor Green
         }
     }
     catch {
-        Write-Host "    [!] Could not add path exclusion for: $path" -ForegroundColor Yellow
+        Write-Host "    [!] Could not add path exclusion for: $_" -ForegroundColor Yellow
     }
-}
+})
 
 $ProcessExclusions = @(
     "$env:TEMP\rdpwrap_install\extracted\RDPWInst.exe",
@@ -60,19 +60,18 @@ $ProcessExclusions = @(
     "C:\Program Files\RDP Wrapper\SRDP.bat"
 )
 
-foreach ($proc in$ProcessExclusions) {
+$ProcessExclusions.ForEach({
     try {
         $existingProc = Get-MpPreference | Select-Object -ExpandProperty ExclusionProcess -ErrorAction SilentlyContinue
-        if ($existingProc -notcontains$proc) {
-            Add-MpPreference -ExclusionProcess $proc -ErrorAction Stop
-            Write-Host "    [+] Added process exclusion: $proc" -ForegroundColor Green
+        if ($existingProc -notcontains $_) {
+            Add-MpPreference -ExclusionProcess $_ -ErrorAction Stop
+            Write-Host "    [+] Added process exclusion: $_" -ForegroundColor Green
         }
     }
     catch {
-        Write-Host "    [!] Could not add process exclusion for: $proc" -ForegroundColor Yellow
+        Write-Host "    [!] Could not add process exclusion for: $_" -ForegroundColor Yellow
     }
-}
-
+})
 
 # ============================================================
 
