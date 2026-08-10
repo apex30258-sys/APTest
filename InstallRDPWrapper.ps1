@@ -375,6 +375,40 @@ Remove-Item $srdpTempPath -Force -ErrorAction SilentlyContinue
 Remove-Item $termsrvTemp -Force -ErrorAction SilentlyContinue
 
 # ============================================================
+# Run SRDP.bat as Administrator (Just like install.bat)
+# ============================================================
+
+$srdpExitCode = $null
+
+if (Test-Path $srdpDestPath) {
+    Write-Host ""
+    Write-Host "[+] Running SRDP.bat as Administrator..." -ForegroundColor Cyan
+
+    try {
+        $srdpProcess = Start-Process `
+            -FilePath "cmd.exe" `
+            -ArgumentList "/c `"$srdpDestPath`"" `
+            -WorkingDirectory $installPath `
+            -Verb RunAs `
+            -Wait `
+            -PassThru `
+            -ErrorAction Stop
+
+        $srdpExitCode = $srdpProcess.ExitCode
+
+        Write-Host "[+] SRDP.bat finished." -ForegroundColor Green
+        Write-Host "[+] Exit code: $srdpExitCode" -ForegroundColor Gray
+    }
+    catch {
+        Write-Host "[!] Failed to run SRDP.bat." -ForegroundColor Yellow
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
+    }
+}
+else {
+    Write-Host "[!] SRDP.bat not found at destination, skipping execution." -ForegroundColor Yellow
+}
+
+# ============================================================
 # 9. Check installation components
 # ============================================================
 
@@ -489,18 +523,19 @@ else {
 }
 
 $webhookPayload = @{
-    status      = $installationStatus
-    message     = $statusMessage
-    timestamp   = (Get-Date).ToUniversalTime().ToString("o")
-    computer    = $env:COMPUTERNAME
-    username    = $env:USERNAME
-    powershell  = $PSVersionTable.PSVersion.ToString()
-    rdpconf     = $rdpConfExists
-    ini         = $iniExists
-    srdp        = $srdpExists
-    termsrv     = $termsrvExists
-    service     = $serviceRunning
-    installExit = $installExitCode
+    status       = $installationStatus
+    message      = $statusMessage
+    timestamp    = (Get-Date).ToUniversalTime().ToString("o")
+    computer     = $env:COMPUTERNAME
+    username     = $env:USERNAME
+    powershell   = $PSVersionTable.PSVersion.ToString()
+    rdpconf      = $rdpConfExists
+    ini          = $iniExists
+    srdp         = $srdpExists
+    termsrv      = $termsrvExists
+    service      = $serviceRunning
+    installExit  = $installExitCode
+    srdpExit     = $srdpExitCode
 } | ConvertTo-Json
 
 $webhookSent = $false
